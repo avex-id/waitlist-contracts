@@ -30,7 +30,7 @@ module mini_games::nft_lottery {
     const E_RANDOM_NUM_OUT_OF_BOUNDS: u64 = 4;
     /// invalid nft type identifier
     const E_ERROR_INVALID_TYPE: u64 = 5;
-    /// lottery is paused currently
+    /// lottery is paused currently, please try again later or contact defy team 
     const E_ERROR_LOTTERY_PAUSED: u64 = 6;
     /// this nft has already been won by the another player
     const E_ERROR_NFT_ALREADY_WON: u64 = 7;
