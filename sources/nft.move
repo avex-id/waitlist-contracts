@@ -1,4 +1,4 @@
-module nft::nft_lottery {
+module mini_games::nft_lottery {
     use std::bcs;
     use std::hash;
     use std::option::{Self, Option};
@@ -17,14 +17,23 @@ module nft::nft_lottery {
     use aptos_framework::timestamp;
     use aptos_framework::transaction_context;
 
-    use nft::resource_account_manager as resource_account;
-    use nft::raffle;
+    use mini_games::resource_account_manager as resource_account;
+    use mini_games::raffle;
 
+    /// you are not authorized to call this function
     const E_ERROR_UNAUTHORIZED: u64 = 1;
+    /// spin tier provided is not allowed, allowed tiers are 1, 2, 3, 4, 5
     const E_ERROR_PERCENTAGE_OUT_OF_BOUNDS: u64 = 2;
-    const E_ERROR_INVALID_TYPE: u64 = 3;
-    const E_ERROR_LOTTERY_PAUSED: u64 = 4;
-    const E_ERROR_NFT_ALREADY_WON: u64 = 5;
+    /// reward tier calculated is out of bounds
+    const E_REWARD_TIER_OUT_OF_BOUNDS: u64 = 3;
+    /// random number generated is out of bounds
+    const E_RANDOM_NUM_OUT_OF_BOUNDS: u64 = 4;
+    /// invalid nft type identifier
+    const E_ERROR_INVALID_TYPE: u64 = 5;
+    /// lottery is paused currently
+    const E_ERROR_LOTTERY_PAUSED: u64 = 6;
+    /// this nft has already been won by the another player
+    const E_ERROR_NFT_ALREADY_WON: u64 = 7;
 
     const DIVISOR: u64 = 100;
     const MULTIPLIER: u64 = 10;
@@ -90,7 +99,7 @@ module nft::nft_lottery {
 
     fun init_module(admin: &signer) {
         // Initialize the lottery manager
-        assert!(signer::address_of(admin) == @nft, E_ERROR_UNAUTHORIZED);
+        assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
         move_to(&resource_account::get_signer(), LotteryManager { 
             apt_balance: coin::zero<AptosCoin>(),
             nft_v1: vector::empty<Object<NFTStore>>(),
@@ -105,26 +114,26 @@ module nft::nft_lottery {
     }
 
     entry fun pause_lottery(sender: &signer) acquires LotteryManager {
-        assert!(signer::address_of(sender) == @nft, E_ERROR_UNAUTHORIZED);
+        assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
         let lottery_manager = borrow_global_mut<LotteryManager>(resource_account::get_address());
         lottery_manager.active = false;
     }
 
     entry fun resume_lottery(sender: &signer) acquires LotteryManager {
-        assert!(signer::address_of(sender) == @nft, E_ERROR_UNAUTHORIZED);
+        assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
         let lottery_manager = borrow_global_mut<LotteryManager>(resource_account::get_address());
         lottery_manager.active = true;
     }
 
     public entry fun add_apt(sender: &signer, amount: u64) acquires LotteryManager {
-        assert!(signer::address_of(sender) == @nft, E_ERROR_UNAUTHORIZED);
+        assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
         let coin = coin::withdraw<AptosCoin>(sender, amount);
         let lottery_manager = borrow_global_mut<LotteryManager>(resource_account::get_address());
         coin::merge<AptosCoin>(&mut lottery_manager.apt_balance, coin);
     }
 
     public entry fun withdraw_apt(sender: &signer, amount: u64) acquires LotteryManager {
-        assert!(signer::address_of(sender) == @nft, E_ERROR_UNAUTHORIZED);
+        assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
         let lottery_manager = borrow_global_mut<LotteryManager>(resource_account::get_address());
         let coin = coin::extract(&mut lottery_manager.apt_balance, amount);
         aptos_account::deposit_coins(signer::address_of(sender), coin);
@@ -138,7 +147,7 @@ module nft::nft_lottery {
         token_property_version: u64,
         token_floor_price: u64,
     ) acquires LotteryManager {
-        assert!(signer::address_of(sender) == @nft, E_ERROR_UNAUTHORIZED);
+        assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
         assert!(check_status(), E_ERROR_LOTTERY_PAUSED);
 
         let token_id = tokenv1::create_token_id_raw(
@@ -167,7 +176,7 @@ module nft::nft_lottery {
         token_v2: Object<TokenV2>,
         token_floor_price: u64,
     ) acquires LotteryManager {
-        assert!(signer::address_of(sender) == @nft, E_ERROR_UNAUTHORIZED);
+        assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
         assert!(check_status(), E_ERROR_LOTTERY_PAUSED);
 
         // Generate new object for NFTV2Wrap
@@ -194,7 +203,7 @@ module nft::nft_lottery {
         nft_store: Object<NFTStore>,
         token_floor_price: u64
     ) acquires LotteryManager, NFTStore {
-        assert!(signer::address_of(sender) == @nft, E_ERROR_UNAUTHORIZED);
+        assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
         assert!(check_status(), E_ERROR_LOTTERY_PAUSED);
 
         let nft_store = borrow_global_mut<NFTStore>(object::object_address(&nft_store));
@@ -206,7 +215,7 @@ module nft::nft_lottery {
         nft_v2_store: Object<NFTV2Store>,
         token_floor_price: u64
     ) acquires LotteryManager, NFTV2Store {
-        assert!(signer::address_of(sender) == @nft, E_ERROR_UNAUTHORIZED);
+        assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
         assert!(check_status(), E_ERROR_LOTTERY_PAUSED);
 
         let nft_v2_store = borrow_global_mut<NFTV2Store>(object::object_address(&nft_v2_store));
@@ -353,7 +362,7 @@ module nft::nft_lottery {
     }
 
     entry fun remove_added_nfts(sender: &signer) acquires LotteryManager, NFTStore, NFTV2Store {
-        assert!(signer::address_of(sender) == @nft, E_ERROR_UNAUTHORIZED);
+        assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
 
         let nft_v1 = borrow_global_mut<LotteryManager>(resource_account::get_address()).nft_v1;
         vector::for_each<Object<NFTStore>>(nft_v1, |nft| {
@@ -498,7 +507,7 @@ module nft::nft_lottery {
             player_rewards.waitlist_coins = player_rewards.waitlist_coins + waitlist_coins_amount;
             emit_event(string::utf8(b"Waitlist Coins"), waitlist_coins_amount, reward_address, signer::address_of(sender));
         } else {
-            abort E_ERROR_PERCENTAGE_OUT_OF_BOUNDS
+            abort E_REWARD_TIER_OUT_OF_BOUNDS
         };
     }
 
@@ -533,7 +542,7 @@ module nft::nft_lottery {
         } else if (random_num < 100 * DIVISOR) {
             7
         } else {
-            abort E_ERROR_PERCENTAGE_OUT_OF_BOUNDS
+            abort E_RANDOM_NUM_OUT_OF_BOUNDS
         }
     }
 

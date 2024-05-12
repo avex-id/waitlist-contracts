@@ -1,12 +1,12 @@
-module nft::resource_account_manager {
+module mini_games::resource_account_manager {
 
     use aptos_framework::account::{Self, SignerCapability};
     use aptos_framework::timestamp;
     use std::bcs;
 
 
-    friend nft::nft_lottery;
-    friend nft::raffle;
+    friend mini_games::nft_lottery;
+    friend mini_games::raffle;
 
 
     struct SignerCapabilityStore has key {
@@ -19,7 +19,7 @@ module nft::resource_account_manager {
     address
     acquires SignerCapabilityStore {
         let signer_capability_ref =
-            &borrow_global<SignerCapabilityStore>(@nft).signer_capability;
+            &borrow_global<SignerCapabilityStore>(@mini_games).signer_capability;
         account::get_signer_capability_address(signer_capability_ref)
     }
 
@@ -27,7 +27,7 @@ module nft::resource_account_manager {
     signer
     acquires SignerCapabilityStore {
         let signer_capability_ref =
-            &borrow_global<SignerCapabilityStore>(@nft).signer_capability;
+            &borrow_global<SignerCapabilityStore>(@mini_games).signer_capability;
         account::create_signer_with_capability(signer_capability_ref)
     }
 

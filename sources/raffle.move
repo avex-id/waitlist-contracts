@@ -1,4 +1,4 @@
-module nft::raffle {
+module mini_games::raffle {
     use std::bcs;
     use std::hash;
     use std::signer;
@@ -21,16 +21,25 @@ module nft::raffle {
     use aptos_token::token_transfers;
     use aptos_token_objects::token::{Token as TokenV2};
 
-    use nft::resource_account_manager as resource_account;
+    use mini_games::resource_account_manager as resource_account;
 
+    /// you are not authorized to call this function 
     const E_ERROR_UNAUTHORIZED: u64 = 1;
+    /// insufficient tickets balance , use less tickets or buy more using defy coins
     const E_INSUFFICIENT_TICKETS: u64 = 2;
+    /// raffle is currently paused, please try again later
     const E_ERROR_RAFFLE_PAUSED: u64 = 3;
+    /// invalid raffle type provided
     const E_ERROR_INVALID_TYPE: u64 = 4;
+    /// raffle has not ended yet, cannot pick a winner
     const E_RAFFLE_NOT_ENDED: u64 = 5;
+    /// invalid number of winners provided, it should be greater than 0
     const E_ERROR_INVALID_NUM_WINNERS: u64 = 6;
+    /// no participants in the raffle, cannot pick a winner
     const E_NO_PARTICIPANTS: u64 = 7;
+    /// excessive tickets minted, limit is 100
     const E_EXCESSIVE_TICKETS: u64 = 8;
+    /// cannot use more than 100 tickets in a single transaction, you can do multiple transactions
     const E_CANNOT_USE_EXCESSIVE_TICKETS: u64 = 9;
 
     struct RaffleManager has key {
@@ -91,9 +100,12 @@ module nft::raffle {
 
     public entry fun add_coin_raffle<X>(admin: &signer, coin_amount: u64) 
     acquires RaffleManager, CoinRaffleManager {
-        assert!(signer::address_of(admin) == @nft, E_ERROR_UNAUTHORIZED);
+
+        assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
         assert!(check_status(), E_ERROR_RAFFLE_PAUSED);
+
         let coin = coin::withdraw<X>(admin, coin_amount);
+
         if(!exists<CoinRaffleManager<X>>(resource_account::get_address())) {
             move_to(&resource_account::get_signer(), CoinRaffleManager<X> {
                 coin_raffles: table::new<u64, CoinRaffle<X>>(),
@@ -117,12 +129,12 @@ module nft::raffle {
                 active: false,
             });
             coin_raffle_manager.coin_raffle_count = coin_raffle_count + 1;
-            
+    
         }
     }
 
     // public entry fun empty_participants_array<X>(admin: &signer, num_participants: u64) acquires CoinRaffle {
-    //     assert!(signer::address_of(admin) == @nft, E_ERROR_UNAUTHORIZED);
+    //     assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
     //     let coin_raffle = borrow_global_mut<CoinRaffle<X>>(resource_account::get_address());
     //     let mut_participants = &mut coin_raffle.participants;
     //      smart_vector::clear(mut_participants);
@@ -138,7 +150,7 @@ module nft::raffle {
         token_name: String,
         token_property_version: u64
     ) acquires RaffleManager, NftRaffleManager{
-        assert!(signer::address_of(admin) == @nft, E_ERROR_UNAUTHORIZED);
+        assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
         assert!(check_status(), E_ERROR_RAFFLE_PAUSED);
         
         let raffle_manager = borrow_global_mut<NftRaffleManager>(resource_account::get_address());
@@ -157,7 +169,7 @@ module nft::raffle {
 
     public entry fun add_nft_v2_raffle(admin: &signer, nft: Object<TokenV2>) 
     acquires RaffleManager, NftRaffleManager {
-        assert!(signer::address_of(admin) == @nft, E_ERROR_UNAUTHORIZED);
+        assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
         assert!(check_status(), E_ERROR_RAFFLE_PAUSED);
 
         let raffle_manager = borrow_global_mut<NftRaffleManager>(resource_account::get_address());
@@ -174,12 +186,11 @@ module nft::raffle {
     public entry fun mint_ticket(admin: &signer, to: address, amount: u64)
     acquires RaffleManager {
         assert!(check_status(), E_ERROR_RAFFLE_PAUSED);
-        let admin_address = signer::address_of(admin);
-        let resource_address = resource_account::get_address();
-        // assert!(amount < 101, E_EXCESSIVE_TICKETS);
+        assert!(amount <= 100, E_EXCESSIVE_TICKETS);
+        // assert!((admin_address == @mini_games) || (admin_address == resource_address), E_ERROR_UNAUTHORIZED);
+        assert!(caller_acl(signer::address_of(admin)), E_ERROR_UNAUTHORIZED);
 
-        // assert!((admin_address == @nft) || (admin_address == resource_address), E_ERROR_UNAUTHORIZED);
-        assert!(check_caller_address(admin_address), E_ERROR_UNAUTHORIZED);
+        let resource_address = resource_account::get_address();
 
         let tickets = &mut borrow_global_mut<RaffleManager>(resource_address).tickets;
         let current_amount = table::borrow_mut_with_default(tickets, to, 0);
@@ -195,7 +206,7 @@ module nft::raffle {
         tickets_to_use: u64
     ) acquires RaffleManager, CoinRaffleManager, NftRaffleManager{
         assert!(check_status(), E_ERROR_RAFFLE_PAUSED);
-        assert!(tickets_to_use < 5000 , E_CANNOT_USE_EXCESSIVE_TICKETS);
+        assert!(tickets_to_use <= 100 , E_CANNOT_USE_EXCESSIVE_TICKETS);
 
         let raffle_manager = borrow_global_mut<RaffleManager>(resource_account::get_address());
 
@@ -233,7 +244,7 @@ module nft::raffle {
 
     public entry fun pick_winner_coin_raffle<X>(admin: &signer, raffle_id: u64, num_winners: u64) 
     acquires RaffleManager, CoinRaffleManager {
-        assert!(signer::address_of(admin) == @nft, E_ERROR_UNAUTHORIZED);
+        assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
         assert!(check_status(), E_ERROR_RAFFLE_PAUSED);
         assert!(num_winners > 0, E_ERROR_INVALID_NUM_WINNERS);
         
@@ -256,12 +267,12 @@ module nft::raffle {
         };
 
         // smart_vector::clear(&mut coin_raffle.participants);
-        coin_raffle.active = false;
+        // coin_raffle.active = false;
     }
 
     public entry fun pick_winner_nft_raffle(admin: &signer, raffle_type: u64, raffle_id: u64) 
     acquires RaffleManager, NftRaffleManager{
-        assert!(signer::address_of(admin) == @nft, E_ERROR_UNAUTHORIZED);
+        assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
         assert!(check_status(), E_ERROR_RAFFLE_PAUSED);
 
         let rand_num = rand_u64_range(1);
@@ -275,7 +286,7 @@ module nft::raffle {
             let token_id = tokenv1::get_token_id(&nft_raffle.nft);
             token_transfers::offer(&resource_account::get_signer(), *winner, token_id, 1);
             // smart_vector::clear(&mut nft_raffle.participants);
-            nft_raffle.active = false;
+            // nft_raffle.active = false;
         } else if (raffle_type == 2) {
             let raffle_manager = borrow_global_mut<NftRaffleManager>(resource_account::get_address());
             let nft_v2_raffle = table::borrow_mut(&mut raffle_manager.nft_v2_raffles, raffle_id);
@@ -284,14 +295,14 @@ module nft::raffle {
             let winner = smart_vector::borrow(&nft_v2_raffle.participants, rand_num % num_participants);
             object::transfer(admin, nft_v2_raffle.nft, *winner);
             // smart_vector::clear(&mut nft_v2_raffle.participants);
-            nft_v2_raffle.active = false;
+            // nft_v2_raffle.active = false;
         } else {
             abort E_ERROR_INVALID_TYPE
         }
     }
 
     public entry fun toggle_coin_raffle<X>(admin: &signer, raffle_id: u64) acquires CoinRaffleManager {
-        assert!(signer::address_of(admin) == @nft, E_ERROR_UNAUTHORIZED);
+        assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
         let coin_raffle_manager = borrow_global_mut<CoinRaffleManager<X>>(resource_account::get_address());
         let coin_raffle = table::borrow_mut(&mut coin_raffle_manager.coin_raffles, raffle_id);
         coin_raffle.active = !coin_raffle.active;
@@ -299,7 +310,7 @@ module nft::raffle {
 
     public entry fun toggle_nft_raffle(admin: &signer, raffle_type: u64, raffle_id: u64)
     acquires NftRaffleManager {
-        assert!(signer::address_of(admin) == @nft, E_ERROR_UNAUTHORIZED);
+        assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
 
         let raffle_manager = borrow_global_mut<NftRaffleManager>(resource_account::get_address());
         if (raffle_type == 1) {
@@ -314,14 +325,14 @@ module nft::raffle {
     } 
 
     public entry fun toggle_global_state(sender: &signer) acquires RaffleManager {
-        assert!(signer::address_of(sender) == @nft, E_ERROR_UNAUTHORIZED);
+        assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
         let raffle_manager = borrow_global_mut<RaffleManager>(resource_account::get_address());
         raffle_manager.global_active = !raffle_manager.global_active;
     }
 
     public entry fun add_coin_to_existing_coin_raffle<X>(admin: &signer, raffle_id: u64, coin_amount: u64)
     acquires CoinRaffleManager {
-        assert!(signer::address_of(admin) == @nft, E_ERROR_UNAUTHORIZED);
+        assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
         // assert!(check_status(), E_ERROR_RAFFLE_PAUSED);
         let coin_raffle_manager = borrow_global_mut<CoinRaffleManager<X>>(resource_account::get_address());
         let coin_raffle = table::borrow_mut(&mut coin_raffle_manager.coin_raffles, raffle_id);
@@ -359,7 +370,7 @@ module nft::raffle {
     // ======================== Private functions ========================
 
     fun init_module(admin: &signer) {
-        assert!(signer::address_of(admin) == @nft, E_ERROR_UNAUTHORIZED);
+        assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
         move_to(&resource_account::get_signer(), RaffleManager {
             tickets: table::new<address, u64>(),
             global_active: true,
@@ -391,9 +402,9 @@ module nft::raffle {
         });
     }
 
-    fun check_caller_address(caller: address): bool {
+    fun caller_acl(caller: address): bool {
         let resource_address = resource_account::get_address();
-        let allowed_addresses: vector<address> = vector[ @nft, @ticketminter, resource_address];
+        let allowed_addresses: vector<address> = vector[ @mini_games, @ticket_minter, resource_address];
         vector::contains(&allowed_addresses, &caller)
     }
 
