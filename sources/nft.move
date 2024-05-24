@@ -361,34 +361,34 @@ module mini_games::nft_lottery {
         }
     }
 
-    entry fun remove_added_nfts(sender: &signer) acquires LotteryManager, NFTStore, NFTV2Store {
-        assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
+    // entry fun remove_added_nfts(sender: &signer) acquires LotteryManager, NFTStore, NFTV2Store {
+    //     assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
 
-        let nft_v1 = borrow_global_mut<LotteryManager>(resource_account::get_address()).nft_v1;
-        vector::for_each<Object<NFTStore>>(nft_v1, |nft| {
-            let NFTStore { token, token_floor_price } = move_from(object::object_address(&nft));
-            tokenv1::deposit_token(sender, token);
-        });
+    //     let nft_v1 = borrow_global_mut<LotteryManager>(resource_account::get_address()).nft_v1;
+    //     vector::for_each<Object<NFTStore>>(nft_v1, |nft| {
+    //         let NFTStore { token, token_floor_price } = move_from(object::object_address(&nft));
+    //         tokenv1::deposit_token(sender, token);
+    //     });
 
-        let nft_v2 = borrow_global_mut<LotteryManager>(resource_account::get_address()).nft_v2;
-        vector::for_each<Object<NFTV2Store>>(nft_v2, |nft| {
-            let NFTV2Store { 
-                token_v2,
-                token_floor_price, 
-                extend_ref,
-                delete_ref
-            } = move_from(object::object_address(&nft));
+    //     let nft_v2 = borrow_global_mut<LotteryManager>(resource_account::get_address()).nft_v2;
+    //     vector::for_each<Object<NFTV2Store>>(nft_v2, |nft| {
+    //         let NFTV2Store { 
+    //             token_v2,
+    //             token_floor_price, 
+    //             extend_ref,
+    //             delete_ref
+    //         } = move_from(object::object_address(&nft));
 
-            let token_signer = object::generate_signer_for_extending(&extend_ref);
-            object::transfer(&token_signer, token_v2, signer::address_of(sender));
-            object::delete(delete_ref);
-        });
+    //         let token_signer = object::generate_signer_for_extending(&extend_ref);
+    //         object::transfer(&token_signer, token_v2, signer::address_of(sender));
+    //         object::delete(delete_ref);
+    //     });
 
-        let lottery_manager = borrow_global_mut<LotteryManager>(resource_account::get_address());
+    //     let lottery_manager = borrow_global_mut<LotteryManager>(resource_account::get_address());
         
-        lottery_manager.nft_v1 = vector::empty<Object<NFTStore>>();
-        lottery_manager.nft_v2 = vector::empty<Object<NFTV2Store>>();
-    }
+    //     lottery_manager.nft_v1 = vector::empty<Object<NFTStore>>();
+    //     lottery_manager.nft_v2 = vector::empty<Object<NFTV2Store>>();
+    // }
 
     fun rand_u64_range(): u64 {
         let tx_hash = transaction_context::get_transaction_hash();

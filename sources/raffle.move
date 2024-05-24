@@ -226,7 +226,6 @@ module mini_games::raffle {
     acquires RaffleManager {
         assert!(check_status(), E_ERROR_RAFFLE_PAUSED);
         assert!(amount <= 100, E_EXCESSIVE_TICKETS);
-        // assert!((admin_address == @mini_games) || (admin_address == resource_address), E_ERROR_UNAUTHORIZED);
         assert!(caller_acl(signer::address_of(admin)), E_ERROR_UNAUTHORIZED);
 
         let resource_address = resource_account::get_address();
@@ -291,9 +290,10 @@ module mini_games::raffle {
         
         let coin_raffle_manager = borrow_global_mut<CoinRaffleManager<X>>(resource_account::get_address());
         let coin_raffle = table::borrow_mut(&mut coin_raffle_manager.coin_raffles, raffle_id);
-        assert!(!coin_raffle.active, E_RAFFLE_NOT_ENDED);
         let num_coins = coin::value(&coin_raffle.coin);
         num_coins = num_coins / num_winners;
+
+        assert!(!coin_raffle.active, E_RAFFLE_NOT_ENDED);
 
         let i = 0;
         
@@ -308,8 +308,7 @@ module mini_games::raffle {
             emit_raffle_winner_event(type_info::type_name<X>(), 0, raffle_id, num_coins, *winner);
         };
 
-        // smart_vector::clear(&mut coin_raffle.participants);
-        // coin_raffle.active = false;
+
     }
 
     public entry fun pick_winner_nft_raffle(admin: &signer, raffle_type: u64, raffle_id: u64) 
