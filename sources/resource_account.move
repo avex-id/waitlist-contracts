@@ -7,6 +7,7 @@ module mini_games::resource_account_manager {
 
     friend mini_games::nft_lottery;
     friend mini_games::raffle;
+    friend mini_games::dice_roll;
 
 
     struct SignerCapabilityStore has key {
