@@ -148,7 +148,7 @@ module mini_games::nft_lottery {
         token_floor_price: u64,
     ) acquires LotteryManager {
         assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
-        assert!(check_status(), E_ERROR_LOTTERY_PAUSED);
+        // assert!(check_status(), E_ERROR_LOTTERY_PAUSED);
 
         let token_id = tokenv1::create_token_id_raw(
             token_creator,
@@ -177,7 +177,7 @@ module mini_games::nft_lottery {
         token_floor_price: u64,
     ) acquires LotteryManager {
         assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
-        assert!(check_status(), E_ERROR_LOTTERY_PAUSED);
+        // assert!(check_status(), E_ERROR_LOTTERY_PAUSED);
 
         // Generate new object for NFTV2Wrap
         let obj_ref = object::create_object(resource_account::get_address());

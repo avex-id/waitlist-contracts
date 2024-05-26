@@ -5,8 +5,8 @@ version = "1.0.0"
 authors = []
 
 [addresses]
-mini_games = "0x160e839f56156b5b3355292ff3a8fb84062a0c00ada75582b010eaf3821cfcc9"
-ticket_minter = "0x514fd52699faeca5f9c40e894e47c0d22b8557458629bc2a28f27c5ec4f1d777"
+mini_games = "_"
+ticket_minter = "_"
 
 [dependencies.AptosFramework]
 git = "https://github.com/aptos-labs/aptos-core.git"
