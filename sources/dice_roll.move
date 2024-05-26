@@ -58,6 +58,7 @@ module mini_games::dice_roll {
         coin_type: String,
         amount_won: u64,
         bet_amounts: vector<u64>,
+        defy_coins_won: u64
     }
 
     struct GameManager<phantom CoinType> has key {
@@ -65,7 +66,8 @@ module mini_games::dice_roll {
         active: bool,
         max_bet_amount: u64,
         min_bet_amount: u64,
-        counter: u64
+        counter: u64,
+        defy_coins_exchange_rate: u64,
     }
 
     struct PlayerRewards<phantom CoinType> has key {
@@ -76,7 +78,9 @@ module mini_games::dice_roll {
     public entry fun add_new_game<CoinType>(
         sender: &signer,
         max_bet_amount: u64,
-        min_bet_amount: u64
+        min_bet_amount: u64,
+        // 1 defu coin == defy_coins_exchange_rate CoinType
+        defy_coins_exchange_rate: u64
     ) {
         assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
         assert!(!exists<GameManager<CoinType>>(resource_account::get_address()), E_GAME_FOR_COIN_TYPE_DOES_ALREADY_EXIST);
@@ -85,7 +89,8 @@ module mini_games::dice_roll {
             active: true,
             max_bet_amount,
             min_bet_amount,
-            counter: 0
+            counter: 0,
+            defy_coins_exchange_rate
         });
     }
 
@@ -115,6 +120,15 @@ module mini_games::dice_roll {
         let game_manager = borrow_global_mut<GameManager<CoinType>>(resource_account::get_address());
         game_manager.max_bet_amount = max_bet_amount;
         game_manager.min_bet_amount = min_bet_amount;
+    }
+
+    public entry fun set_defy_coin_exchange_value<CoinType>(
+        sender: &signer,
+        defy_coins_exchange_rate: u64
+    ) acquires GameManager {
+        assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
+        let game_manager = borrow_global_mut<GameManager<CoinType>>(resource_account::get_address());
+        game_manager.defy_coins_exchange_rate = defy_coins_exchange_rate;
     }
 
     public entry fun add_coin_balance<CoinType>(
@@ -159,24 +173,12 @@ module mini_games::dice_roll {
         assert!(game_manager.active, E_GAME_PAUSED);
         assert!(vector::length(&bet_amounts) == 11, E_ERROR_INVALID_BET_AMOUNTS);
 
-        // let total_bet_coins : u64 = 0;
+        let total_bet_coins : u64 = 0;
 
-        // for ( i in 0..11){
-        //     let bet  = vector::borrow<u64>( &bet_amounts, i);
-        //     total_bet_coins = total_bet_coins + *bet;
-        // };
-
-        let total_bet_coins = *vector::borrow<u64>( &bet_amounts, 0);
-        total_bet_coins = total_bet_coins + *vector::borrow<u64>( &bet_amounts, 1);
-        total_bet_coins = total_bet_coins + *vector::borrow<u64>( &bet_amounts, 2);
-        total_bet_coins = total_bet_coins + *vector::borrow<u64>( &bet_amounts, 3);
-        total_bet_coins = total_bet_coins + *vector::borrow<u64>( &bet_amounts, 4);
-        total_bet_coins = total_bet_coins + *vector::borrow<u64>( &bet_amounts, 5);
-        total_bet_coins = total_bet_coins + *vector::borrow<u64>( &bet_amounts, 6);
-        total_bet_coins = total_bet_coins + *vector::borrow<u64>( &bet_amounts, 7);
-        total_bet_coins = total_bet_coins + *vector::borrow<u64>( &bet_amounts, 8);
-        total_bet_coins = total_bet_coins + *vector::borrow<u64>( &bet_amounts, 9);
-        total_bet_coins = total_bet_coins + *vector::borrow<u64>( &bet_amounts,10);
+        for ( i in 0..11){
+            let bet  = vector::borrow<u64>( &bet_amounts, i);
+            total_bet_coins = total_bet_coins + *bet;
+        };
 
         assert!(total_bet_coins <= game_manager.max_bet_amount, E_ERROR_BET_AMOUNT_EXCEEDS_MAX);
         assert!(total_bet_coins >= game_manager.min_bet_amount, E_ERROR_BET_AMOUNT_BELOW_MIN);
@@ -190,7 +192,7 @@ module mini_games::dice_roll {
 
         let sum = dice_one_value + dice_two_value;
 
-        handle_roll<CoinType>(sender, dice_one_value, dice_two_value, sum, bet_amounts);
+        handle_roll<CoinType>(sender, dice_one_value, dice_two_value, sum, bet_amounts, total_bet_coins);
 
     }
 
@@ -252,7 +254,6 @@ module mini_games::dice_roll {
         vector::append(&mut tx_hash, i_bytes);
         let hash = hash::sha3_256(tx_hash);
         let value = bytes_to_u64(hash) % 6;
-
         (value + 1)
     }
 
@@ -262,8 +263,8 @@ module mini_games::dice_roll {
         dice_one_value: u64,
         dice_two_value: u64,
         dice_sum: u64, 
-        bet_amounts : vector<u64>
-        
+        bet_amounts : vector<u64>,
+        total_bet_coins: u64
     ) acquires GameManager, PlayerRewards {
 
         if(!exists<PlayerRewards<CoinType>>(signer::address_of(sender))){
@@ -272,104 +273,139 @@ module mini_games::dice_roll {
                 num_plays: 0
             });
         };
+
         let game_manager = borrow_global_mut<GameManager<CoinType>>(resource_account::get_address());
+        let defy_coins_exchange_rate = game_manager.defy_coins_exchange_rate;
         let player_rewards = borrow_global_mut<PlayerRewards<CoinType>>(signer::address_of(sender));
         player_rewards.num_plays = player_rewards.num_plays + 1;
 
         if (dice_sum == 2) {
             let bet_amount = vector::borrow<u64>(&bet_amounts, 0);
-            let amount_won = *bet_amount * 4;
-            if (amount_won > 0) {
+            let amount_won = *bet_amount * 12;
+            let defy_coins_won = if (amount_won > 0) {
                 let coin = coin::extract(&mut game_manager.coin_balance, amount_won);
                 coin::merge(&mut player_rewards.rewards_balance, coin);
-            }; 
-            emit_play_event(dice_one_value, dice_two_value, dice_sum, signer::address_of(sender) , type_info::type_name<CoinType>(), amount_won, bet_amounts);      
+                0
+            } else{
+                total_bet_coins / defy_coins_exchange_rate
+            };
+            emit_play_event(dice_one_value, dice_two_value, dice_sum, signer::address_of(sender) , type_info::type_name<CoinType>(), amount_won, bet_amounts, defy_coins_won);      
         } else if (dice_sum == 3) {
             let bet_amount = vector::borrow<u64>(&bet_amounts, 1);
-            let amount_won = (*bet_amount * 35)  / 10;
-            if (amount_won > 0) {
+            let amount_won = *bet_amount * 10;
+            let defy_coins_won = if (amount_won > 0) {
                 let coin = coin::extract(&mut game_manager.coin_balance, amount_won);
                 coin::merge(&mut player_rewards.rewards_balance, coin);
+                0
+            } else{
+                total_bet_coins / defy_coins_exchange_rate
             };
-            emit_play_event(dice_one_value, dice_two_value, dice_sum, signer::address_of(sender) , type_info::type_name<CoinType>(), amount_won, bet_amounts);
+            emit_play_event(dice_one_value, dice_two_value, dice_sum, signer::address_of(sender) , type_info::type_name<CoinType>(), amount_won, bet_amounts, defy_coins_won);
            
         } else if (dice_sum == 4) {
             let bet_amount = vector::borrow<u64>(&bet_amounts, 2);
-            let amount_won = (*bet_amount * 30) / 10;
-            if (amount_won > 0) {
+            let amount_won = *bet_amount * 8;
+            let defy_coins_won = if (amount_won > 0) {
                 let coin = coin::extract(&mut game_manager.coin_balance, amount_won);
                 coin::merge(&mut player_rewards.rewards_balance, coin);
+                0
+            } else{
+                total_bet_coins / defy_coins_exchange_rate
             };
-            emit_play_event(dice_one_value, dice_two_value, dice_sum, signer::address_of(sender) , type_info::type_name<CoinType>(), amount_won, bet_amounts);
+            emit_play_event(dice_one_value, dice_two_value, dice_sum, signer::address_of(sender) , type_info::type_name<CoinType>(), amount_won, bet_amounts, defy_coins_won);
         } else if (dice_sum == 5) {
             let bet_amount = vector::borrow<u64>(&bet_amounts, 3);
-            let amount_won = (*bet_amount * 25) / 10;
-            if (amount_won > 0) {
+            let amount_won = *bet_amount * 6;
+            let defy_coins_won = if (amount_won > 0) {
                 let coin = coin::extract(&mut game_manager.coin_balance, amount_won);
                 coin::merge(&mut player_rewards.rewards_balance, coin);
+                0
+            } else{
+                total_bet_coins / defy_coins_exchange_rate
             };
-            emit_play_event(dice_one_value, dice_two_value, dice_sum, signer::address_of(sender) , type_info::type_name<CoinType>(), amount_won, bet_amounts);
+            emit_play_event(dice_one_value, dice_two_value, dice_sum, signer::address_of(sender) , type_info::type_name<CoinType>(), amount_won, bet_amounts, defy_coins_won);
         } else if (dice_sum == 6) {
             let bet_amount = vector::borrow<u64>(&bet_amounts, 4);
-            let amount_won = (*bet_amount * 20) / 10;
-            if (amount_won > 0) {
+            let amount_won = *bet_amount * 4;
+            let defy_coins_won = if (amount_won > 0) {
                 let coin = coin::extract(&mut game_manager.coin_balance, amount_won);
                 coin::merge(&mut player_rewards.rewards_balance, coin);
+                0
+            } else{
+                total_bet_coins / defy_coins_exchange_rate
             };
-            emit_play_event(dice_one_value, dice_two_value, dice_sum, signer::address_of(sender) , type_info::type_name<CoinType>(), amount_won, bet_amounts);
+            emit_play_event(dice_one_value, dice_two_value, dice_sum, signer::address_of(sender) , type_info::type_name<CoinType>(), amount_won, bet_amounts, defy_coins_won);
         } else if (dice_sum == 7) {
             let bet_amount = vector::borrow<u64>(&bet_amounts, 5);
-            let amount_won = (*bet_amount * 15) / 10;
-            if (amount_won > 0) {
+            let amount_won = *bet_amount * 2;
+            let defy_coins_won = if (amount_won > 0) {
                 let coin = coin::extract(&mut game_manager.coin_balance, amount_won);
                 coin::merge(&mut player_rewards.rewards_balance, coin);
+                0
+            } else{
+                total_bet_coins / defy_coins_exchange_rate
             };
-            emit_play_event(dice_one_value, dice_two_value, dice_sum, signer::address_of(sender) , type_info::type_name<CoinType>(), amount_won, bet_amounts);
+            emit_play_event(dice_one_value, dice_two_value, dice_sum, signer::address_of(sender) , type_info::type_name<CoinType>(), amount_won, bet_amounts, defy_coins_won);
            
         } else if (dice_sum == 8) {
             let bet_amount = vector::borrow<u64>(&bet_amounts, 6);
-            let amount_won = (*bet_amount * 20) / 10;
-            if (amount_won > 0) {
+            let amount_won = *bet_amount * 4;
+            let defy_coins_won = if (amount_won > 0) {
                 let coin = coin::extract(&mut game_manager.coin_balance, amount_won);
                 coin::merge(&mut player_rewards.rewards_balance, coin);
+                0
+            } else{
+                total_bet_coins / defy_coins_exchange_rate
             };
-            emit_play_event(dice_one_value, dice_two_value, dice_sum, signer::address_of(sender) , type_info::type_name<CoinType>(), amount_won, bet_amounts);
+            emit_play_event(dice_one_value, dice_two_value, dice_sum, signer::address_of(sender) , type_info::type_name<CoinType>(), amount_won, bet_amounts, defy_coins_won);
         
         } else if (dice_sum == 9) {
             let bet_amount = vector::borrow<u64>(&bet_amounts, 7);
-            let amount_won = (*bet_amount * 25) / 10;
-            if (amount_won > 0) {
+            let amount_won = *bet_amount * 6;
+            let defy_coins_won = if (amount_won > 0) {
                 let coin = coin::extract(&mut game_manager.coin_balance, amount_won);
                 coin::merge(&mut player_rewards.rewards_balance, coin);
+                0
+            } else{
+                total_bet_coins / defy_coins_exchange_rate
             };
-            emit_play_event(dice_one_value, dice_two_value, dice_sum, signer::address_of(sender) , type_info::type_name<CoinType>(), amount_won, bet_amounts);
+            emit_play_event(dice_one_value, dice_two_value, dice_sum, signer::address_of(sender) , type_info::type_name<CoinType>(), amount_won, bet_amounts, defy_coins_won);
         
         } else if (dice_sum == 10) {
             let bet_amount = vector::borrow<u64>(&bet_amounts, 8);
-            let amount_won = (*bet_amount * 30) / 10;
-            if (amount_won > 0) {
+            let amount_won = *bet_amount * 8;
+            let defy_coins_won = if (amount_won > 0) {
                 let coin = coin::extract(&mut game_manager.coin_balance, amount_won);
                 coin::merge(&mut player_rewards.rewards_balance, coin);
+                0
+            } else{
+                total_bet_coins / defy_coins_exchange_rate
             };
-            emit_play_event(dice_one_value, dice_two_value, dice_sum, signer::address_of(sender) , type_info::type_name<CoinType>(), amount_won, bet_amounts);
+            emit_play_event(dice_one_value, dice_two_value, dice_sum, signer::address_of(sender) , type_info::type_name<CoinType>(), amount_won, bet_amounts, defy_coins_won);
         
         } else if (dice_sum == 11) {
             let bet_amount = vector::borrow<u64>(&bet_amounts, 9);
-            let amount_won = (*bet_amount * 35) / 10;
-            if (amount_won > 0) {
+            let amount_won = *bet_amount * 10;
+            let defy_coins_won = if (amount_won > 0) {
                 let coin = coin::extract(&mut game_manager.coin_balance, amount_won);
                 coin::merge(&mut player_rewards.rewards_balance, coin);
+                0
+            } else{
+                total_bet_coins / defy_coins_exchange_rate
             };
-            emit_play_event(dice_one_value, dice_two_value, dice_sum, signer::address_of(sender) , type_info::type_name<CoinType>(), amount_won, bet_amounts);
+            emit_play_event(dice_one_value, dice_two_value, dice_sum, signer::address_of(sender) , type_info::type_name<CoinType>(), amount_won, bet_amounts, defy_coins_won);
         
         } else if (dice_sum == 12) {
             let bet_amount = vector::borrow<u64>(&bet_amounts, 10);
-            let amount_won = *bet_amount * 4;
-            if (amount_won > 0) {
+            let amount_won = *bet_amount * 12;
+            let defy_coins_won = if (amount_won > 0) {
                 let coin = coin::extract(&mut game_manager.coin_balance, amount_won);
                 coin::merge(&mut player_rewards.rewards_balance, coin);
+                0
+            } else{
+                total_bet_coins / defy_coins_exchange_rate
             };
-            emit_play_event(dice_one_value, dice_two_value, dice_sum, signer::address_of(sender) , type_info::type_name<CoinType>(), amount_won, bet_amounts);
+            emit_play_event(dice_one_value, dice_two_value, dice_sum, signer::address_of(sender) , type_info::type_name<CoinType>(), amount_won, bet_amounts, defy_coins_won);
         } else {
             abort E_DICE_SUM_OUT_OF_BOUNDS
         };
@@ -386,7 +422,7 @@ module mini_games::dice_roll {
     }
 
 
-    fun emit_play_event(dice_one_value: u64, dice_two_value: u64, sum: u64, player: address, coin_type: String, amount_won: u64, bet_amounts: vector<u64>) {
+    fun emit_play_event(dice_one_value: u64, dice_two_value: u64, sum: u64, player: address, coin_type: String, amount_won: u64, bet_amounts: vector<u64>, defy_coins_won: u64) {
      
         0x1::event::emit(PlayEvent {
             dice_one_value,
@@ -396,6 +432,7 @@ module mini_games::dice_roll {
             coin_type,
             amount_won,
             bet_amounts,
+            defy_coins_won
         });
     }
 
