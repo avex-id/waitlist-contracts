@@ -257,7 +257,7 @@ module mini_games::plinko {
         };
     }
 
-    fun init_module(sender: &signer) {
+    fun init_module(_sender: &signer) {
         move_to(&resource_account::get_signer(), GameConfig{
             max_balls_per_play: 10,
             min_balls_per_play: 1,

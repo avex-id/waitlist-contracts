@@ -1,26 +1,19 @@
 module mini_games::dice_roll {
     use std::bcs;
     use std::hash;
-    use std::option::{Self, Option};
     use std::signer;
-    use std::string::{Self, String};
     use std::vector;
-
-    use aptos_std::object::{Self, Object, DeleteRef, ExtendRef}; 
-    use aptos_token::token::{Self as tokenv1, Token as TokenV1};
-    use aptos_token_objects::token::{Token as TokenV2};
+    use std::string::{String};
 
     use aptos_framework::aptos_account;
-    use aptos_framework::aptos_coin::AptosCoin;
     use aptos_framework::coin::{Self, Coin};
-    use aptos_framework::table::{Self, Table};
     use aptos_framework::timestamp;
     use aptos_framework::transaction_context;
     use aptos_framework::type_info;
+    
 
 
     use mini_games::resource_account_manager as resource_account;
-    use mini_games::raffle;
 
     /// you are not authorized to call this function
     const E_ERROR_UNAUTHORIZED: u64 = 1;
@@ -79,7 +72,7 @@ module mini_games::dice_roll {
         sender: &signer,
         max_bet_amount: u64,
         min_bet_amount: u64,
-        // 1 defu coin == defy_coins_exchange_rate CoinType
+        // 1 defy coin == defy_coins_exchange_rate CoinType
         defy_coins_exchange_rate: u64
     ) {
         assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
