@@ -6,9 +6,7 @@ module mini_games::raffle {
     use std::string::{Self, String};
 
     use aptos_std::smart_vector::{Self, SmartVector};
-    use aptos_std::big_vector::{Self, BigVector};
-    use aptos_std::table_with_length::{Self, TableWithLength};
-    use aptos_std::object::{Self, Object, DeleteRef, ExtendRef}; 
+    use aptos_std::object::{Self, Object, DeleteRef, ExtendRef};
 
     use aptos_framework::aptos_account;
     use aptos_framework::coin::{Self, Coin};
@@ -23,7 +21,7 @@ module mini_games::raffle {
 
     use mini_games::resource_account_manager as resource_account;
 
-    /// you are not authorized to call this function 
+    /// you are not authorized to call this function
     const E_ERROR_UNAUTHORIZED: u64 = 1;
     /// insufficient tickets balance , use less tickets or buy more using defy coins
     const E_INSUFFICIENT_TICKETS: u64 = 2;
@@ -73,7 +71,7 @@ module mini_games::raffle {
         participants: SmartVector<address>,
         active: bool,
     }
-    
+
     #[resource_group_member(group = aptos_framework::object::ObjectGroup)]
     struct NFTV2Raffle has key, store {
         token_v2: Object<TokenV2>,
@@ -87,6 +85,27 @@ module mini_games::raffle {
         participants: Table<u64, SmartVector<address>>,
         length: u64,
     }
+
+
+    struct MultiNftRaffleManager has key {
+        multi_nft_raffles: Table<u64, Object<MultiNftRaffle>>,
+        multi_nft_raffle_count: u64
+    }
+
+    #[resource_group_member(group = aptos_framework::object::ObjectGroup)]
+    struct MultiNftRaffle has key {
+        nft_v2_vector: vector<Object<TokenV2>>,
+        nft_v1_vector: vector<TokenV1>,
+        extend_ref: ExtendRef,
+        delete_ref: DeleteRef,
+        participants: SmartVector<address>,
+        active: bool
+    }
+
+    struct Plc has key {
+        nft_v1_plc : vector<TokenV1>,
+    }
+
 
     #[event]
     struct TicketMintEvent has drop, store {
@@ -116,7 +135,7 @@ module mini_games::raffle {
 
     // ======================== Entry functions ========================
 
-    public entry fun add_coin_raffle<X>(admin: &signer, coin_amount: u64) 
+    public entry fun add_coin_raffle<X>(admin: &signer, coin_amount: u64)
     acquires RaffleManager, CoinRaffleManager {
 
         assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
@@ -147,7 +166,7 @@ module mini_games::raffle {
                 active: false,
             });
             coin_raffle_manager.coin_raffle_count = coin_raffle_count + 1;
-    
+
         }
     }
 
@@ -162,7 +181,7 @@ module mini_games::raffle {
     // }
 
     public entry fun add_nft_raffle(
-        admin: &signer, 
+        admin: &signer,
         token_creator: address,
         token_collection: String,
         token_name: String,
@@ -170,7 +189,7 @@ module mini_games::raffle {
     ) acquires RaffleManager, NftRaffleManager{
         assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
         assert!(check_status(), E_ERROR_RAFFLE_PAUSED);
-        
+
         let raffle_manager = borrow_global_mut<NftRaffleManager>(resource_account::get_address());
         let nft_v1_raffle_count = raffle_manager.nft_v1_raffle_count;
         let token_id = tokenv1::create_token_id_raw(token_creator, token_collection, token_name, token_property_version);
@@ -193,7 +212,64 @@ module mini_games::raffle {
         raffle_manager.nft_v1_raffle_count = nft_v1_raffle_count + 1;
     }
 
-    public entry fun add_nft_v2_raffle(admin: &signer, nft: Object<TokenV2>) 
+    public entry fun add_multi_nft_raffle(
+        admin: &signer,
+        token_creator: vector<address>,
+        token_collection: vector<String>,
+        token_name: vector<String>,
+        token_property_version: vector<u64>,
+        nft_v2_vector: vector<Object<TokenV2>>
+    ) acquires  MultiNftRaffleManager{
+        assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
+        // assert!(check_status(), E_ERROR_RAFFLE_PAUSED);
+
+        if(!exists<MultiNftRaffleManager>(resource_account::get_address())) {
+            move_to<MultiNftRaffleManager>(&resource_account::get_signer(), MultiNftRaffleManager {
+                multi_nft_raffles: table::new<u64, Object<MultiNftRaffle>>(),
+                multi_nft_raffle_count: 0
+            });
+        };
+
+        let raffle_manager = borrow_global_mut<MultiNftRaffleManager>(resource_account::get_address());
+        let multi_nft_raffle_count = raffle_manager.multi_nft_raffle_count;
+
+        let nft_v1_vector = vector::empty<TokenV1>();
+        // let nft_v2_vector = vector::empty<Object<TokenV2>>();
+        let participants = smart_vector::empty<address>();
+
+        for (i in 0..vector::length(&token_creator)) {
+            let creator = vector::borrow(&token_creator, i);
+            let collection = vector::borrow(&token_collection, i);
+            let name = vector::borrow(&token_name, i);
+            let property_version = vector::borrow(&token_property_version, i);
+
+            let token_id = tokenv1::create_token_id_raw(*creator, *collection, *name, *property_version);
+            let nft = tokenv1::withdraw_token(admin, token_id, 1);
+
+            vector::push_back(&mut nft_v1_vector, nft);
+        };
+
+        let obj = object::create_object(resource_account::get_address());
+        let obj_signer = object::generate_signer(&obj);
+        let extend_ref = object::generate_extend_ref(&obj);
+        let delete_ref = object::generate_delete_ref(&obj);
+
+        move_to(&obj_signer, MultiNftRaffle {
+            nft_v1_vector,
+            nft_v2_vector,
+            participants,
+            extend_ref,
+            delete_ref,
+            active: false
+        });
+
+        let obj_adr = object::object_from_constructor_ref(&obj);
+        table::add(&mut raffle_manager.multi_nft_raffles, multi_nft_raffle_count, obj_adr);
+
+        raffle_manager.multi_nft_raffle_count = multi_nft_raffle_count + 1;
+    }
+
+    public entry fun add_nft_v2_raffle(admin: &signer, nft: Object<TokenV2>)
     acquires RaffleManager, NftRaffleManager {
         assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
         assert!(check_status(), E_ERROR_RAFFLE_PAUSED);
@@ -213,10 +289,9 @@ module mini_games::raffle {
             extend_ref,
             delete_ref
         });
+
         let obj = object::object_from_constructor_ref(&obj_ref);
         object::transfer_to_object(admin, nft, obj);
-
-
         table::add(&mut raffle_manager.nft_v2_raffles, nft_v2_raffle_count, obj);
 
         raffle_manager.nft_v2_raffle_count = nft_v2_raffle_count + 1;
@@ -242,7 +317,7 @@ module mini_games::raffle {
         raffle_type: u64,
         raffle_id: u64,
         tickets_to_use: u64
-    ) acquires RaffleManager, CoinRaffleManager, NftRaffleManager, NFTRaffle, NFTV2Raffle{
+    ) acquires RaffleManager, CoinRaffleManager, NftRaffleManager, NFTRaffle, NFTV2Raffle, MultiNftRaffleManager, MultiNftRaffle{
         assert!(check_status(), E_ERROR_RAFFLE_PAUSED);
         assert!(tickets_to_use <= 100 , E_CANNOT_USE_EXCESSIVE_TICKETS);
 
@@ -266,6 +341,12 @@ module mini_games::raffle {
             let raffle = borrow_global_mut<NFTV2Raffle>(object::object_address(raffle_store));
             emit_raffle_entry_event(string::utf8(b"0x1::string::string"), raffle_type, raffle_id, tickets_to_use, signer::address_of(sender));
             (raffle.active, &mut raffle.participants)
+        } else if (raffle_type == 3) {
+            let multi_nft_raffle_manager = borrow_global_mut<MultiNftRaffleManager>(resource_account::get_address());
+            let raffle_store = table::borrow_mut(&mut multi_nft_raffle_manager.multi_nft_raffles, raffle_id);
+            let raffle = borrow_global_mut<MultiNftRaffle>(object::object_address(raffle_store));
+            emit_raffle_entry_event(string::utf8(b"0x1::string::string"), raffle_type, raffle_id, tickets_to_use, signer::address_of(sender));
+            (raffle.active, &mut raffle.participants)
         } else {
             abort E_ERROR_INVALID_TYPE
         };
@@ -279,15 +360,15 @@ module mini_games::raffle {
             smart_vector::push_back(participants, signer::address_of(sender));
         };
 
-        
-    } 
 
-    public entry fun pick_winner_coin_raffle<X>(admin: &signer, raffle_id: u64, num_winners: u64) 
+    }
+
+    public entry fun pick_winner_coin_raffle<X>(admin: &signer, raffle_id: u64, num_winners: u64)
     acquires RaffleManager, CoinRaffleManager {
         assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
         assert!(check_status(), E_ERROR_RAFFLE_PAUSED);
         assert!(num_winners > 0, E_ERROR_INVALID_NUM_WINNERS);
-        
+
         let coin_raffle_manager = borrow_global_mut<CoinRaffleManager<X>>(resource_account::get_address());
         let coin_raffle = table::borrow_mut(&mut coin_raffle_manager.coin_raffles, raffle_id);
         let num_coins = coin::value(&coin_raffle.coin);
@@ -296,7 +377,7 @@ module mini_games::raffle {
         assert!(!coin_raffle.active, E_RAFFLE_NOT_ENDED);
 
         let i = 0;
-        
+
         while( i < num_winners ) {
             i = i + 1;
             let rand_num = rand_u64_range(i);
@@ -311,8 +392,8 @@ module mini_games::raffle {
 
     }
 
-    public entry fun pick_winner_nft_raffle(admin: &signer, raffle_type: u64, raffle_id: u64) 
-    acquires RaffleManager, NftRaffleManager, NFTRaffle, NFTV2Raffle, PastParticipants{
+    public entry fun pick_winner_nft_raffle(admin: &signer, raffle_type: u64, raffle_id: u64)
+    acquires RaffleManager, NftRaffleManager, NFTRaffle, NFTV2Raffle, PastParticipants, MultiNftRaffleManager, MultiNftRaffle, Plc {
         assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
         assert!(check_status(), E_ERROR_RAFFLE_PAUSED);
 
@@ -321,7 +402,9 @@ module mini_games::raffle {
         if (raffle_type == 1) {
             let raffle_manager = borrow_global_mut<NftRaffleManager>(resource_account::get_address());
             let nft_raffle_store = table::borrow(&mut raffle_manager.nft_v1_raffles, raffle_id);
-            let NFTRaffle { token, participants, active } = move_from(object::object_address(nft_raffle_store));
+            let NFTRaffle { token, participants, active } = move_from<NFTRaffle>(
+                object::object_address(nft_raffle_store)
+            );
 
             let num_participants = smart_vector::length(&participants);
 
@@ -340,11 +423,12 @@ module mini_games::raffle {
             let past_participants = borrow_global_mut<PastParticipants>(resource_account::get_address());
             table::add(&mut past_participants.participants, past_participants.length, participants);
             past_participants.length = past_participants.length + 1;
-
         } else if (raffle_type == 2) {
             let raffle_manager = borrow_global_mut<NftRaffleManager>(resource_account::get_address());
             let nft_v2_raffle_store = table::borrow_mut(&mut raffle_manager.nft_v2_raffles, raffle_id);
-            let NFTV2Raffle { token_v2, participants, active, extend_ref, delete_ref } = move_from(object::object_address(nft_v2_raffle_store));
+            let NFTV2Raffle { token_v2, participants, active, extend_ref, delete_ref } = move_from<NFTV2Raffle>(
+                object::object_address(nft_v2_raffle_store)
+            );
 
             let num_participants = smart_vector::length(&participants);
 
@@ -361,7 +445,49 @@ module mini_games::raffle {
             let past_participants = borrow_global_mut<PastParticipants>(resource_account::get_address());
             table::add(&mut past_participants.participants, past_participants.length, participants);
             past_participants.length = past_participants.length + 1;
+        } else if (raffle_type == 3){
+            let raffle_manager = borrow_global_mut<MultiNftRaffleManager>(resource_account::get_address());
+            let multi_nft_raffle_store = table::borrow_mut(&mut raffle_manager.multi_nft_raffles, raffle_id);
+            let MultiNftRaffle { nft_v1_vector, nft_v2_vector, participants, active, extend_ref, delete_ref } = move_from<MultiNftRaffle>(
+                object::object_address(multi_nft_raffle_store)
+            );
+            for(i in 0..vector::length(&nft_v1_vector)){
+                let nft = vector::pop_back(&mut nft_v1_vector);
+                let num_participants = smart_vector::length(&participants);
+                assert!(num_participants > 0, E_NO_PARTICIPANTS);
+                assert!(!active, E_RAFFLE_NOT_ENDED);
+                let winner = smart_vector::borrow(&participants, rand_num % num_participants);
+                let resource_signer = resource_account::get_signer();
+                let token_id = tokenv1::get_token_id(&nft);
+                tokenv1::deposit_token(&resource_signer, nft);
+                token_transfers::offer(&resource_signer, *winner, token_id, 1);
+                object::transfer(&resource_signer, *multi_nft_raffle_store, *winner);
+                emit_raffle_winner_event(string::utf8(b"0x1::string::string"), raffle_type, raffle_id, 1, *winner);
+            };
 
+            assert!(vector::is_empty(&nft_v1_vector), 1);
+
+            for(i in 0..vector::length(&nft_v2_vector)){
+                let nft = vector::borrow(&nft_v2_vector, i);
+                let num_participants = smart_vector::length(&participants);
+                assert!(num_participants > 0, E_NO_PARTICIPANTS);
+                assert!(!active, E_RAFFLE_NOT_ENDED);
+                let winner = smart_vector::borrow(&participants, rand_num % num_participants);
+                let token_signer = object::generate_signer_for_extending(&extend_ref);
+                object::transfer(&token_signer,*nft, *winner);
+                emit_raffle_winner_event(string::utf8(b"0x1::string::string"), raffle_type, raffle_id, 1, *winner);
+            };
+
+
+
+            let past_participants = borrow_global_mut<PastParticipants>(resource_account::get_address());
+            table::add(&mut past_participants.participants, past_participants.length, participants);
+            past_participants.length = past_participants.length + 1;
+
+            let plc = borrow_global_mut<Plc>(resource_account::get_address());
+            vector::append(&mut plc.nft_v1_plc, nft_v1_vector);
+
+            object::delete(delete_ref);
         } else {
             abort E_ERROR_INVALID_TYPE
         }
@@ -375,7 +501,7 @@ module mini_games::raffle {
     }
 
     public entry fun toggle_nft_raffle(admin: &signer, raffle_type: u64, raffle_id: u64)
-    acquires NftRaffleManager, NFTRaffle, NFTV2Raffle{
+    acquires NftRaffleManager, NFTRaffle, NFTV2Raffle, MultiNftRaffleManager, MultiNftRaffle{
         assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
 
         let raffle_manager = borrow_global_mut<NftRaffleManager>(resource_account::get_address());
@@ -387,10 +513,16 @@ module mini_games::raffle {
             let nft_v2_raffle_store = table::borrow_mut(&mut raffle_manager.nft_v2_raffles, raffle_id);
             let nft_v2_raffle = borrow_global_mut<NFTV2Raffle>(object::object_address(nft_v2_raffle_store));
             nft_v2_raffle.active = !nft_v2_raffle.active;
-        } else {
+        } else if(raffle_id == 3){
+            let multi_nft_raffle_manager = borrow_global_mut<MultiNftRaffleManager>(resource_account::get_address());
+            let multi_nft_raffle_store = table::borrow_mut(&mut multi_nft_raffle_manager.multi_nft_raffles, raffle_id);
+            let multi_nft_raffle = borrow_global_mut<MultiNftRaffle>(object::object_address(multi_nft_raffle_store));
+            multi_nft_raffle.active = !multi_nft_raffle.active;
+
+        }else {
             abort E_ERROR_INVALID_TYPE
         }
-    } 
+    }
 
     public entry fun toggle_global_state(sender: &signer) acquires RaffleManager {
         assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
@@ -413,7 +545,7 @@ module mini_games::raffle {
     public fun get_raffle_config<X>(
         raffle_type: u64,
         raffle_id: u64,
-    ) : (u64, u64, bool) acquires CoinRaffleManager, NftRaffleManager, NFTRaffle, NFTV2Raffle{
+    ) : (u64, u64, bool) acquires CoinRaffleManager, NftRaffleManager, NFTRaffle, NFTV2Raffle, MultiNftRaffleManager, MultiNftRaffle{
         // assert!(check_status(), E_ERROR_RAFFLE_PAUSED);
         let (num_prize, participants, is_active) = if (raffle_type == 0) {
             let raffle_manager = borrow_global_mut<CoinRaffleManager<X>>(resource_account::get_address());
@@ -430,7 +562,14 @@ module mini_games::raffle {
             let raffle_store = table::borrow(&mut raffle_manager.nft_v2_raffles, raffle_id);
             let raffle = borrow_global_mut<NFTV2Raffle>(object::object_address(raffle_store));
             (1, &raffle.participants, raffle.active)
-        } else {
+        } else if(raffle_type == 3){
+            let raffle_manager = borrow_global_mut<MultiNftRaffleManager>(resource_account::get_address());
+            let raffle_store = table::borrow(&mut raffle_manager.multi_nft_raffles, raffle_id);
+            let raffle = borrow_global_mut<MultiNftRaffle>(object::object_address(raffle_store));
+            let nft_v1_len = vector::length(&raffle.nft_v1_vector);
+            let nft_v2_len = vector::length(&raffle.nft_v2_vector);
+            (nft_v1_len + nft_v2_len, &raffle.participants, raffle.active)
+        }else {
             abort E_ERROR_INVALID_TYPE
         };
 
