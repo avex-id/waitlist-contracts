@@ -34,6 +34,8 @@ module mini_games::nft_lottery {
     const E_ERROR_LOTTERY_PAUSED: u64 = 6;
     /// this nft has already been won by the another player
     const E_ERROR_NFT_ALREADY_WON: u64 = 7;
+    /// function depriciated
+    const E_DEPRICIATED : u64 = 8;
 
     const DIVISOR: u64 = 100;
     const MULTIPLIER: u64 = 10;
