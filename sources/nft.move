@@ -222,6 +222,25 @@ module mini_games::nft_lottery {
         nft_v2_store.token_floor_price = token_floor_price;
     }
 
+    entry fun play_v1_multiple(
+        sender: &signer,
+        winning_percentage: u64,
+        use_free_spin: bool,  // Use free spin if available
+        nft_store: Object<NFTStore>,
+        number_of_spins: u64,
+    ) acquires  LotteryManager, NFTStore, Rewards{
+        assert!(check_is_nft_v1_still_valid(nft_store) , E_ERROR_NFT_ALREADY_WON);
+        let i = 0;
+        while (i < number_of_spins) {
+            if (check_is_nft_v1_still_valid(nft_store)) {
+                play_v1(sender, winning_percentage, use_free_spin, nft_store);
+                i = i + 1;
+            } else {
+                break;
+            }
+        }
+    }
+
     entry fun play_v1(
         sender: &signer,
         winning_percentage: u64,
@@ -264,10 +283,29 @@ module mini_games::nft_lottery {
 
         let random_num = rand_u64_range();
         let tier = allot_tier(winning_percentage * MULTIPLIER, random_num);
-        handle_tier(sender, tier, winning_percentage, spin_cost, option::some(nft_store), option::none(), 0);
+        handle_tier(sender, tier, winning_percentage, spin_cost + service_fee, option::some(nft_store), option::none(), 0);
     }
 
-    public entry fun play_v2(
+    entry fun play_v2_multiple(
+        sender: &signer,
+        winning_percentage: u64,
+        use_free_spin: bool,  // Use free spin if available
+        nft_v2_store: Object<NFTV2Store>,
+        number_of_spins: u64,
+    ) acquires  LotteryManager, NFTV2Store, Rewards{
+        assert!(check_is_nft_v2_still_valid(nft_v2_store), E_ERROR_NFT_ALREADY_WON);
+        let i = 0;
+        while (i < number_of_spins) {
+            if (check_is_nft_v2_still_valid(nft_v2_store)) {
+                play_v2_internal(sender, winning_percentage, use_free_spin, nft_v2_store);
+                i = i + 1;
+            } else {
+                break;
+            }
+        }
+    }
+
+    fun play_v2_internal(
         sender: &signer,
         winning_percentage: u64,
         use_free_spin: bool,  // Use free spin if available
@@ -308,12 +346,21 @@ module mini_games::nft_lottery {
 
         let random_num = rand_u64_range();
         let tier = allot_tier(winning_percentage * MULTIPLIER, random_num);
-        handle_tier(sender, tier, winning_percentage, spin_cost, option::none(), option::some(nft_v2_store), 1);
+        handle_tier(sender, tier, winning_percentage, spin_cost + service_fee, option::none(), option::some(nft_v2_store), 1);
+    }
+
+    public entry fun play_v2(
+        sender: &signer,
+        winning_percentage: u64,
+        use_free_spin: bool,  // Use free spin if available
+        nft_v2_store: Object<NFTV2Store>,
+    ) acquires LotteryManager, NFTV2Store, Rewards {
+        assert!(false, E_DEPRICIATED);
     }
 
     entry fun claim(sender: &signer) 
-    acquires Rewards, NFTStore, NFTV2Store, LotteryManager {
-        assert!(check_status(), E_ERROR_LOTTERY_PAUSED);
+    acquires Rewards, NFTStore, NFTV2Store, /*LotteryManager*/ {
+        // assert!(check_status(), E_ERROR_LOTTERY_PAUSED);
 
         // Fetch the rewards of the player
         let sender_address = signer::address_of(sender);
