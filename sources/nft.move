@@ -6,7 +6,7 @@ module mini_games::nft_lottery {
     use std::string::{Self, String};
     use std::vector;
 
-    use aptos_std::object::{Self, Object, DeleteRef, ExtendRef}; 
+    use aptos_std::object::{Self, Object, DeleteRef, ExtendRef};
     use aptos_token::token::{Self as tokenv1, Token as TokenV1};
     use aptos_token_objects::token::{Token as TokenV2};
 
@@ -36,12 +36,15 @@ module mini_games::nft_lottery {
     const E_ERROR_NFT_ALREADY_WON: u64 = 7;
     /// function depriciated
     const E_DEPRICIATED : u64 = 8;
+    /// you can select a maximum of 10 spins, and a minimum of 1 spin
+    const E_SPIN_NUM_OUT_OF_BOUND: u64 = 9;
 
     const DIVISOR: u64 = 100;
     const MULTIPLIER: u64 = 10;
     const FEE_MULTIPLIER: u64 = 10;
     const WAITLIST_COINS_PRICE_PER_APTOS: u64 = 3000;
     const WAITLIST_COINS_PRICE_PER_APTOS_DIVISOR: u64 = 100000000;
+    const MAX_SPINS:u64 = 10;
 
 
     #[event]
@@ -58,6 +61,10 @@ module mini_games::nft_lottery {
         nft_v1: vector<Object<NFTStore>>,
         nft_v2: vector<Object<NFTV2Store>>,
         active: bool,
+    }
+
+    struct Counter has key {
+        counter: u64,
     }
 
     struct NFTResponse has drop {
@@ -77,7 +84,7 @@ module mini_games::nft_lottery {
         token: TokenV1,
         token_floor_price: u64,
     }
-    
+
     #[resource_group_member(group = aptos_framework::object::ObjectGroup)]
     struct NFTV2Store has key, store {
         token_v2: Object<TokenV2>,
@@ -102,13 +109,13 @@ module mini_games::nft_lottery {
     fun init_module(admin: &signer) {
         // Initialize the lottery manager
         assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
-        move_to(&resource_account::get_signer(), LotteryManager { 
+        move_to(&resource_account::get_signer(), LotteryManager {
             apt_balance: coin::zero<AptosCoin>(),
             nft_v1: vector::empty<Object<NFTStore>>(),
             nft_v2: vector::empty<Object<NFTV2Store>>(),
             active: true,
         });
-    
+
         // Initialize the rewards
         move_to(&resource_account::get_signer(), Rewards {
             rewards: table::new<address, Reward>(),
@@ -140,7 +147,7 @@ module mini_games::nft_lottery {
         let coin = coin::extract(&mut lottery_manager.apt_balance, amount);
         aptos_account::deposit_coins(signer::address_of(sender), coin);
     }
-    
+
     public entry fun add_nft_v1(
         sender: &signer,
         token_creator: address,
@@ -172,7 +179,7 @@ module mini_games::nft_lottery {
         let lottery_manager = borrow_global_mut<LotteryManager>(resource_account::get_address());
         vector::push_back(&mut lottery_manager.nft_v1, obj);
     }
-    
+
     public entry fun add_nft_v2(
         sender: &signer,
         token_v2: Object<TokenV2>,
@@ -230,15 +237,17 @@ module mini_games::nft_lottery {
         use_free_spin: bool,  // Use free spin if available
         nft_store: Object<NFTStore>,
         number_of_spins: u64,
-    ) acquires  LotteryManager, NFTStore, Rewards{
+    ) acquires  LotteryManager, NFTStore, Rewards, Counter{
         assert!(check_is_nft_v1_still_valid(nft_store) , E_ERROR_NFT_ALREADY_WON);
+        assert!(number_of_spins <= MAX_SPINS, E_SPIN_NUM_OUT_OF_BOUND);
+        assert!(number_of_spins > 0, E_ERROR_UNAUTHORIZED);
         let i = 0;
         while (i < number_of_spins) {
             if (check_is_nft_v1_still_valid(nft_store)) {
                 play_v1(sender, winning_percentage, use_free_spin, nft_store);
                 i = i + 1;
             } else {
-                break;
+                break
             }
         }
     }
@@ -248,7 +257,7 @@ module mini_games::nft_lottery {
         winning_percentage: u64,
         use_free_spin: bool,  // Use free spin if available
         nft_store: Object<NFTStore>,
-    ) acquires LotteryManager, NFTStore, Rewards {
+    ) acquires LotteryManager, NFTStore, Rewards, Counter {
         assert!(check_status(), E_ERROR_LOTTERY_PAUSED);
         // assert!(winning_percentage >= 0 && winning_percentage <= 100, E_ERROR_PERCENTAGE_OUT_OF_BOUNDS);
         assert!(check_percentage_bounds(winning_percentage), E_ERROR_PERCENTAGE_OUT_OF_BOUNDS);
@@ -271,7 +280,7 @@ module mini_games::nft_lottery {
                 waitlist_coins: 0,
             });
         };
-        
+
         // Handle free spin
         let player_rewards = table::borrow_mut(&mut borrow_global_mut<Rewards>(resource_account::get_address()).rewards, signer::address_of(sender));
         let free_spin_length = vector::length(&player_rewards.free_spin);
@@ -283,7 +292,14 @@ module mini_games::nft_lottery {
             coin::merge<AptosCoin>(&mut lottery_manager.apt_balance, fees);
         };
 
-        let random_num = rand_u64_range();
+        if(!exists<Counter>(resource_account::get_address())){
+            move_to<Counter>(&resource_account::get_signer(), Counter{counter: 0});
+        };
+
+        let counter = borrow_global_mut<Counter>(resource_account::get_address());
+        let random_num = rand_u64_range(counter.counter);
+        counter.counter = counter.counter + 1;
+
         let tier = allot_tier(winning_percentage * MULTIPLIER, random_num);
         handle_tier(sender, tier, winning_percentage, spin_cost + service_fee, option::some(nft_store), option::none(), 0);
     }
@@ -294,15 +310,17 @@ module mini_games::nft_lottery {
         use_free_spin: bool,  // Use free spin if available
         nft_v2_store: Object<NFTV2Store>,
         number_of_spins: u64,
-    ) acquires  LotteryManager, NFTV2Store, Rewards{
+    ) acquires  LotteryManager, NFTV2Store, Rewards, Counter{
         assert!(check_is_nft_v2_still_valid(nft_v2_store), E_ERROR_NFT_ALREADY_WON);
+        assert!(number_of_spins <= MAX_SPINS, E_SPIN_NUM_OUT_OF_BOUND);
+        assert!(number_of_spins > 0, E_ERROR_UNAUTHORIZED);
         let i = 0;
         while (i < number_of_spins) {
             if (check_is_nft_v2_still_valid(nft_v2_store)) {
                 play_v2_internal(sender, winning_percentage, use_free_spin, nft_v2_store);
                 i = i + 1;
             } else {
-                break;
+                break
             }
         }
     }
@@ -312,7 +330,7 @@ module mini_games::nft_lottery {
         winning_percentage: u64,
         use_free_spin: bool,  // Use free spin if available
         nft_v2_store: Object<NFTV2Store>,
-    ) acquires LotteryManager, NFTV2Store, Rewards {
+    ) acquires LotteryManager, NFTV2Store, Rewards, Counter {
         assert!(check_status(), E_ERROR_LOTTERY_PAUSED);
         // assert!(winning_percentage >= (0 * DIVISOR) && winning_percentage <= (100 * DIVISOR), E_ERROR_PERCENTAGE_OUT_OF_BOUNDS);
         assert!(check_percentage_bounds(winning_percentage), E_ERROR_PERCENTAGE_OUT_OF_BOUNDS);
@@ -334,7 +352,7 @@ module mini_games::nft_lottery {
                 waitlist_coins: 0,
             });
         };
-        
+
         // Handle free spin
         let player_rewards = table::borrow_mut(&mut borrow_global_mut<Rewards>(resource_account::get_address()).rewards, signer::address_of(sender));
         let free_spin_length = vector::length(&player_rewards.free_spin);
@@ -346,7 +364,13 @@ module mini_games::nft_lottery {
             coin::merge<AptosCoin>(&mut lottery_manager.apt_balance, fees);
         };
 
-        let random_num = rand_u64_range();
+        if(!exists<Counter>(resource_account::get_address())){
+            move_to<Counter>(&resource_account::get_signer(), Counter{counter: 0});
+        };
+
+        let counter = borrow_global_mut<Counter>(resource_account::get_address());
+        let random_num = rand_u64_range(counter.counter);
+        counter.counter = counter.counter + 1;
         let tier = allot_tier(winning_percentage * MULTIPLIER, random_num);
         handle_tier(sender, tier, winning_percentage, spin_cost + service_fee, option::none(), option::some(nft_v2_store), 1);
     }
@@ -360,7 +384,7 @@ module mini_games::nft_lottery {
         assert!(false, E_DEPRICIATED);
     }
 
-    entry fun claim(sender: &signer) 
+    entry fun claim(sender: &signer)
     acquires Rewards, NFTStore, NFTV2Store, /*LotteryManager*/ {
         // assert!(check_status(), E_ERROR_LOTTERY_PAUSED);
 
@@ -379,9 +403,9 @@ module mini_games::nft_lottery {
 
         // Claim v2 NFTs if any
         vector::for_each<Object<NFTV2Store>>(player_rewards.nft_v2, |nft_v2| {
-            let NFTV2Store { 
+            let NFTV2Store {
                 token_v2,
-                token_floor_price, 
+                token_floor_price,
                 extend_ref,
                 delete_ref
             } = move_from(object::object_address(&nft_v2));
@@ -409,40 +433,42 @@ module mini_games::nft_lottery {
             player_rewards.raffle_ticket = 0;
         }
     }
-
+    //
     // entry fun remove_added_nfts(sender: &signer) acquires LotteryManager, NFTStore, NFTV2Store {
     //     assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
-
+    //
     //     let nft_v1 = borrow_global_mut<LotteryManager>(resource_account::get_address()).nft_v1;
     //     vector::for_each<Object<NFTStore>>(nft_v1, |nft| {
     //         let NFTStore { token, token_floor_price } = move_from(object::object_address(&nft));
     //         tokenv1::deposit_token(sender, token);
     //     });
-
+    //
     //     let nft_v2 = borrow_global_mut<LotteryManager>(resource_account::get_address()).nft_v2;
     //     vector::for_each<Object<NFTV2Store>>(nft_v2, |nft| {
-    //         let NFTV2Store { 
+    //         let NFTV2Store {
     //             token_v2,
-    //             token_floor_price, 
+    //             token_floor_price,
     //             extend_ref,
     //             delete_ref
     //         } = move_from(object::object_address(&nft));
-
+    //
     //         let token_signer = object::generate_signer_for_extending(&extend_ref);
     //         object::transfer(&token_signer, token_v2, signer::address_of(sender));
     //         object::delete(delete_ref);
     //     });
-
+    //
     //     let lottery_manager = borrow_global_mut<LotteryManager>(resource_account::get_address());
-        
+    //
     //     lottery_manager.nft_v1 = vector::empty<Object<NFTStore>>();
     //     lottery_manager.nft_v2 = vector::empty<Object<NFTV2Store>>();
     // }
 
-    fun rand_u64_range(): u64 {
+    fun rand_u64_range(i: u64): u64 {
         let tx_hash = transaction_context::get_transaction_hash();
         let timestamp = bcs::to_bytes(&timestamp::now_microseconds());
         vector::append(&mut tx_hash, timestamp);
+        let i_bytes = bcs::to_bytes<u64>(&i);
+        vector::append(&mut tx_hash, i_bytes);
         let hash = hash::sha3_256(tx_hash);
         let value = bytes_to_u64(hash);
         value % 10000
@@ -455,8 +481,8 @@ module mini_games::nft_lottery {
 
 
     fun handle_tier(
-        sender: &signer, 
-        tier: u64, 
+        sender: &signer,
+        tier: u64,
         winning_percentage: u64,
         fee_amount: u64,
         nft_store: Option<Object<NFTStore>>,
@@ -466,13 +492,13 @@ module mini_games::nft_lottery {
         let rewards = &mut borrow_global_mut<Rewards>(resource_account::get_address()).rewards;
         if(!table::contains(rewards, signer::address_of(sender))){
             table::add(rewards, signer::address_of(sender), Reward {
-            nft: vector::empty<Object<NFTStore>>(),
-            nft_v2: vector::empty<Object<NFTV2Store>>(),
-            apt: coin::zero<AptosCoin>(),
-            free_spin: vector::empty<u64>(),
-            raffle_ticket: 0,
-            waitlist_coins: 0,
-        })};
+                nft: vector::empty<Object<NFTStore>>(),
+                nft_v2: vector::empty<Object<NFTV2Store>>(),
+                apt: coin::zero<AptosCoin>(),
+                free_spin: vector::empty<u64>(),
+                raffle_ticket: 0,
+                waitlist_coins: 0,
+            })};
 
         let reward_address = if (type == 0) {
             option::some(object::object_address(option::borrow(&nft_store)))
@@ -532,7 +558,7 @@ module mini_games::nft_lottery {
             let coin_amount = (fee_amount * 4) / 10;
             let coin = coin::extract(apt, coin_amount);
             coin::merge(&mut player_rewards.apt, coin);
-            
+
             let reward_type = string::utf8(b"40% APT CASHBACK");
             // string::append(&mut reward_type, string::utf8(bcs::to_bytes(&coin_amount)));
             emit_event(reward_type, coin_amount, reward_address, signer::address_of(sender));
@@ -563,13 +589,13 @@ module mini_games::nft_lottery {
 
     fun check_is_nft_v1_still_valid(nft_store: Object<NFTStore>): bool  acquires LotteryManager{
         let nft_v1 = borrow_global<LotteryManager>(resource_account::get_address()).nft_v1;
-        
+
         vector::contains(&nft_v1, &nft_store)
     }
 
     fun check_is_nft_v2_still_valid(nft_v2_store: Object<NFTV2Store>): bool  acquires LotteryManager{
         let nft_v2 = borrow_global<LotteryManager>(resource_account::get_address()).nft_v2;
-      
+
         vector::contains(&nft_v2, &nft_v2_store)
     }
 
@@ -626,7 +652,7 @@ module mini_games::nft_lottery {
     }
 
     #[view]
-    public fun see_nft_details(): vector<NFTResponse> 
+    public fun see_nft_details(): vector<NFTResponse>
     acquires LotteryManager, NFTStore {
         let nft_v1 = borrow_global<LotteryManager>(resource_account::get_address()).nft_v1;
         let response = vector::empty<NFTResponse>();
@@ -636,7 +662,7 @@ module mini_games::nft_lottery {
             let token = &nft_store.token;
             let token_floor_price = nft_store.token_floor_price;
 
-            let token_id = tokenv1::get_token_id(token);  
+            let token_id = tokenv1::get_token_id(token);
             let (_, _, token_name, _) = tokenv1::get_token_id_fields(&token_id);
             vector::push_back(&mut response, NFTResponse {
                 token_name,
@@ -649,7 +675,7 @@ module mini_games::nft_lottery {
     }
 
     #[view]
-    public fun see_nft_details_user_reward(user: address): vector<NFTResponse> 
+    public fun see_nft_details_user_reward(user: address): vector<NFTResponse>
     acquires Rewards, NFTStore {
         // let response = vector::empty<NFTResponse>();
 
@@ -665,7 +691,7 @@ module mini_games::nft_lottery {
                 let token = &nft_store.token;
                 let token_floor_price = nft_store.token_floor_price;
 
-                let token_id = tokenv1::get_token_id(token);  
+                let token_id = tokenv1::get_token_id(token);
                 let (_, _, token_name, _) = tokenv1::get_token_id_fields(&token_id);
                 vector::push_back(&mut response, NFTResponse {
                     token_name,
@@ -678,7 +704,7 @@ module mini_games::nft_lottery {
         } else {
             vector::empty<NFTResponse>()
         };
-       
+
         response
     }
 
@@ -727,18 +753,18 @@ module mini_games::nft_lottery {
         } else {
             vector::empty<NFTResponseV2>()
         };
-       
+
         response
     }
 
     #[view]
-    public fun see_nft_v1_names(): vector<String> 
+    public fun see_nft_v1_names(): vector<String>
     acquires LotteryManager, NFTStore {
         let nft_v1 = borrow_global<LotteryManager>(resource_account::get_address()).nft_v1;
         let names = vector::empty<String>();
         vector::for_each<Object<NFTStore>>(nft_v1, |nft| {
             let token = &borrow_global<NFTStore>(object::object_address(&nft)).token;
-            let token_id = tokenv1::get_token_id(token);  
+            let token_id = tokenv1::get_token_id(token);
             let (_, _, token_name, _) = tokenv1::get_token_id_fields(&token_id);
             vector::push_back(&mut names, token_name);
         });
@@ -746,7 +772,7 @@ module mini_games::nft_lottery {
     }
 
     #[view]
-    public fun see_nft_v2_address(): vector<Object<TokenV2>> 
+    public fun see_nft_v2_address(): vector<Object<TokenV2>>
     acquires LotteryManager, NFTV2Store {
         let nft_v2 = borrow_global<LotteryManager>(resource_account::get_address()).nft_v2;
         let addresses = vector::empty<Object<TokenV2>>();
@@ -756,5 +782,5 @@ module mini_games::nft_lottery {
         });
         addresses
     }
-    
+
 }
