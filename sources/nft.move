@@ -352,11 +352,11 @@ module mini_games::nft_lottery {
     }
 
     public entry fun play_v2(
-        sender: &signer,
-        winning_percentage: u64,
-        use_free_spin: bool,  // Use free spin if available
-        nft_v2_store: Object<NFTV2Store>,
-    ) acquires LotteryManager, NFTV2Store, Rewards {
+        _sender: &signer,
+        _winning_percentage: u64,
+        _use_free_spin: bool,  // Use free spin if available
+        _nft_v2_store: Object<NFTV2Store>,
+    )  {
         assert!(false, E_DEPRICIATED);
     }
 
