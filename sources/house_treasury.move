@@ -12,6 +12,7 @@ module mini_games::house_treasury {
 
     friend mini_games::plinko;
     friend mini_games::dice_roll;
+    friend mini_games::coin_flip;
     friend mini_games::wheel;
 
     // === Errors ===
