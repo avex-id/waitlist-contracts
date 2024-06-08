@@ -1,19 +1,16 @@
 module mini_games::wheel {
     use std::bcs;
     use std::hash;
-    use std::option::{Self, Option};
+    use std::option::{Option};
     use std::signer;
-    use std::string::{Self, String};
+    use std::string::{String};
     use std::vector;
 
-    use aptos_std::object::{Self, Object, DeleteRef, ExtendRef};
-    use aptos_token::token::{Self as tokenv1, Token as TokenV1};
+    use aptos_std::object::{Self, Object};
+    use aptos_token::token::{Self as tokenv1};
     use aptos_token_objects::token::{Token as TokenV2};
 
-    use aptos_framework::aptos_account;
-    use aptos_framework::aptos_coin::AptosCoin;
     use aptos_framework::coin::{Self, Coin};
-    use aptos_framework::table::{Self, Table};
     use aptos_framework::timestamp;
     use aptos_framework::transaction_context;
 
@@ -23,24 +20,21 @@ module mini_games::wheel {
 
     /// you are not authorized to call this function
     const E_ERROR_UNAUTHORIZED: u64 = 1;
-    /// spin tier provided is not allowed, allowed tiers are 1, 2, 3, 4, 5
-    const E_ERROR_PERCENTAGE_OUT_OF_BOUNDS: u64 = 2;
     /// reward tier calculated is out of bounds
-    const E_REWARD_TIER_OUT_OF_BOUNDS: u64 = 3;
+    const E_REWARD_TIER_OUT_OF_BOUNDS: u64 = 2;
     /// random number generated is out of bounds
-    const E_RANDOM_NUM_OUT_OF_BOUNDS: u64 = 4;
-    /// invalid nft type identifier
-    const E_ERROR_INVALID_TYPE: u64 = 5;
+    const E_RANDOM_NUM_OUT_OF_BOUNDS: u64 = 3;
     /// lottery is paused currently, please try again later or contact defy team
-    const E_ERROR_LOTTERY_PAUSED: u64 = 6;
-    /// this nft has already been won by the another player
-    const E_ERROR_NFT_ALREADY_WON: u64 = 7;
+    const E_ERROR_LOTTERY_PAUSED: u64 = 4;
+    /// no nfts left in the contract, wait sme time to play again they will be refilled
+    const E_NO_NFTS_LEFT_IN_CONTRACT: u64 = 5;
+    /// size of coin rewards tiers array invalid
+    const E_INVALID_NUM_COIN_REWARD_TIERS: u64 = 6;
+    /// values of coin rewards tiers array invalid, they should be in descending order
+    const E_INVALID_VALUES_COIN_REWARD_TIERS: u64 = 7;
 
-    const DIVISOR: u64 = 100;
-    const MULTIPLIER: u64 = 10;
-    const FEE_MULTIPLIER: u64 = 10;
-    const WAITLIST_COINS_PRICE_PER_APTOS: u64 = 3000;
-    const WAITLIST_COINS_PRICE_PER_APTOS_DIVISOR: u64 = 100000000;
+
+    const NUM_COIN_REWARD_TIERS: u64 = 4;
 
 
     #[event]
@@ -52,38 +46,41 @@ module mini_games::wheel {
         timestamp: u64,
     }
 
-    struct GameConfig has key {
-        active: bool,
-        fees_apt: u64,
+    struct Counter has key {
+        counter: u64
     }
 
-    struct NFTs has key {
+    struct GameConfig<phantom CoinType> has key {
+        spin_fee: u64,
+        active: bool,
+        coin_reward_tiers_amounts: vector<u64>
+    }
+
+    struct NFTs has key, store {
         nft_v1_vector : vector<NFT_V1>,
         nft_v2_vector : vector<NFT_V2>,
     }
 
-    struct NFT_V1 has key {
+    struct NFT_V1 has drop, store{
         token_creator: address,
         token_collection: String,
         token_name: String,
         token_property_version: u64,
     }
 
-    struct NFT_V2 has key {
+    struct NFT_V2 has store, drop {
         token_v2: address,
     }
 
-    struct Rewards has key {
-        rewards: Table<address, Reward>,
-    }
-
-    struct Reward has key, store {
-        nft: vector<NFT_V1>,
+    struct UserRewards has key, store {
+        nft_v1: vector<NFT_V1>,
         nft_v2: vector<NFT_V2>,
-        apt: Coin<AptosCoin>,
-        free_spin: u64,
         raffle_ticket: u64,
         waitlist_coins: u64,
+    }
+
+    struct UserCoinRewards<phantom Cointype> has key, store {
+        coin : Coin<Cointype>
     }
 
 
@@ -95,21 +92,44 @@ module mini_games::wheel {
             nft_v2_vector: vector::empty<NFT_V2>(),
         });
 
-        move_to<GameConfig>(&resource_account::get_signer(), GameConfig {
-            active: false,
-            fees_apt: 10000000,
+        move_to<Counter>(&resource_account::get_signer(), Counter {
+            counter: 0
         });
+
     }
 
-    entry fun pause_lottery(sender: &signer) acquires GameConfig {
+    entry fun add_or_change_game_config<CoinType>(sender: &signer, spin_fee: u64, coin_reward_tiers_amounts: vector<u64>) acquires GameConfig {
         assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
-        let lottery_manager = borrow_global_mut<GameConfig>(resource_account::get_address());
+        assert!(vector::length(&coin_reward_tiers_amounts) == NUM_COIN_REWARD_TIERS, E_INVALID_NUM_COIN_REWARD_TIERS);
+        let last_reward : u64 = *vector::borrow(&coin_reward_tiers_amounts, 0);
+        for( i in  1..vector::length(&coin_reward_tiers_amounts)){
+            let current_reward = *vector::borrow(&coin_reward_tiers_amounts, i);
+            assert!(last_reward > current_reward, E_INVALID_VALUES_COIN_REWARD_TIERS);
+            last_reward = current_reward;
+        };
+        if (! exists<GameConfig<CoinType>>(resource_account::get_address())){
+            move_to<GameConfig<CoinType>>(&resource_account::get_signer(), GameConfig<CoinType>{
+                spin_fee,
+                active: true,
+                coin_reward_tiers_amounts
+            });
+        } else{
+            let game_manager = borrow_global_mut<GameConfig<CoinType>>(resource_account::get_address());
+            game_manager.spin_fee = spin_fee;
+            game_manager.coin_reward_tiers_amounts = coin_reward_tiers_amounts;
+        }
+
+    }
+
+    entry fun pause_lottery<CoinType>(sender: &signer) acquires GameConfig {
+        assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
+        let lottery_manager = borrow_global_mut<GameConfig<CoinType>>(resource_account::get_address());
         lottery_manager.active = false;
     }
 
-    entry fun resume_lottery(sender: &signer) acquires GameConfig {
+    entry fun resume_lottery<CoinType>(sender: &signer) acquires GameConfig {
         assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
-        let lottery_manager = borrow_global_mut<GameConfig>(resource_account::get_address());
+        let lottery_manager = borrow_global_mut<GameConfig<CoinType>>(resource_account::get_address());
         lottery_manager.active = true;
     }
 
@@ -158,228 +178,171 @@ module mini_games::wheel {
         object::transfer(sender, token_v2, resource_account::get_address());
     }
 
-    entry fun play(
-        sender: &signer,
-        use_free_spin: bool
-    ) acquires GameConfig, NFTs, Rewards {
-        assert!(check_status(), E_ERROR_LOTTERY_PAUSED);
-
-        if(!table::contains(&borrow_global<Rewards>(resource_account::get_address()).rewards, signer::address_of(sender))){
-            table::add(&mut borrow_global_mut<Rewards>(resource_account::get_address()).rewards, signer::address_of(sender), Reward {
-                nft: vector::empty<NFT_V1>(),
-                nft_v2: vector::empty<NFT_V2>(),
-                apt: coin::zero<AptosCoin>(),
-                free_spin: 0,
-                raffle_ticket: 0,
-                waitlist_coins: 0,
-            });
-        };
-
-        // Handle free spin
-        let player_rewards = table::borrow_mut(&mut borrow_global_mut<Rewards>(resource_account::get_address()).rewards, signer::address_of(sender));
-        let free_spin = player_rewards.free_spin;
-        if (use_free_spin && free_spin > 0){
-            player_rewards.free_spin = free_spin - 1;
-        } else {
-            process_fee(sender);
-        };
-
-        let random_num = rand_u64_range();
-        handle_tier(sender, random_num);
+    entry fun play<CoinType>(
+        sender: &signer
+        // no_of_spins: u64
+    ) acquires GameConfig, NFTs, Counter, UserCoinRewards, UserRewards {
+        assert!(check_status<CoinType>(), E_ERROR_LOTTERY_PAUSED);
+        process_fee<CoinType>(sender);
+        let counter_resouce = borrow_global_mut<Counter>(resource_account::get_address());
+        let random_num = rand_u64_range(counter_resouce.counter);
+        counter_resouce.counter = counter_resouce.counter + 1;
+        let tier = allot_tier(random_num);
+        handle_tier<CoinType>(sender, tier);
     }
 
-    entry fun claim(sender: &signer)
-    acquires Rewards {
-        assert!(check_status(), E_ERROR_LOTTERY_PAUSED);
+    entry fun claim<W,X,Y,Z>(sender: &signer, num_coins: u64)
+    acquires UserRewards, UserCoinRewards, GameConfig {
+        assert!(check_status<X>(), E_ERROR_LOTTERY_PAUSED);
+        assert!(check_status<Y>(), E_ERROR_LOTTERY_PAUSED);
+        assert!(check_status<Z>(), E_ERROR_LOTTERY_PAUSED);
 
-        // Fetch the rewards of the player
+        if (num_coins > 0) {
+            assert!(check_status<W>(), E_ERROR_LOTTERY_PAUSED);
+            let user_coin_rewards = borrow_global_mut<UserCoinRewards<W>>(signer::address_of(sender));
+            let coins = coin::extract_all(&mut user_coin_rewards.coin);
+            coin::deposit(signer::address_of(sender), coins);
+        };
+
+        if (num_coins > 1) {
+            assert!(check_status<W>(), E_ERROR_LOTTERY_PAUSED);
+            let user_coin_rewards = borrow_global_mut<UserCoinRewards<X>>(signer::address_of(sender));
+            let coins = coin::extract_all(&mut user_coin_rewards.coin);
+            coin::deposit(signer::address_of(sender), coins);
+        };
+
+        if (num_coins > 2) {
+            assert!(check_status<W>(), E_ERROR_LOTTERY_PAUSED);
+            let user_coin_rewards = borrow_global_mut<UserCoinRewards<Y>>(signer::address_of(sender));
+            let coins = coin::extract_all(&mut user_coin_rewards.coin);
+            coin::deposit(signer::address_of(sender), coins);
+        };
+
+        if (num_coins > 3) {
+            assert!(check_status<W>(), E_ERROR_LOTTERY_PAUSED);
+            let user_coin_rewards = borrow_global_mut<UserCoinRewards<Z>>(signer::address_of(sender));
+            let coins = coin::extract_all(&mut user_coin_rewards.coin);
+            coin::deposit(signer::address_of(sender), coins);
+        };
+
         let sender_address = signer::address_of(sender);
-        let rewards = &mut borrow_global_mut<Rewards>(resource_account::get_address()).rewards;
-        let player_rewards = table::borrow_mut(rewards, sender_address);
+        let user_rewards = borrow_global_mut<UserRewards>(sender_address);
 
-        // Claim v1 NFTs if any
-        vector::for_each<Object<NFTStore>>(player_rewards.nft, |nft| {
-            let NFTStore { token, token_floor_price } = move_from(object::object_address(&nft));
+        for (i in 0..vector::length(&user_rewards.nft_v1)){
+            let nft_details = vector::pop_back(&mut user_rewards.nft_v1);
+
+            let token_id = tokenv1::create_token_id_raw(
+                nft_details.token_creator,
+                nft_details.token_collection,
+                nft_details.token_name,
+                nft_details.token_property_version
+                );
+            let token = tokenv1::withdraw_token(&resource_account::get_signer(), token_id, 1);
             tokenv1::deposit_token(sender, token);
-            object::transfer(&resource_account::get_signer(), nft, sender_address);
-        });
-        player_rewards.nft = vector::empty<Object<NFTStore>>();
-
-        // Claim v2 NFTs if any
-        vector::for_each<Object<NFTV2Store>>(player_rewards.nft_v2, |nft_v2| {
-            let NFTV2Store {
-                token_v2,
-                token_floor_price,
-                extend_ref,
-                delete_ref
-            } = move_from(object::object_address(&nft_v2));
-
-            let token_signer = object::generate_signer_for_extending(&extend_ref);
-            object::transfer(&token_signer, token_v2, sender_address);
-            object::delete(delete_ref);
-            // object::transfer(&resource_account::get_signer(), nft_v2, sender_address);
-        });
 
 
+        };
 
-        player_rewards.nft_v2 = vector::empty<Object<NFTV2Store>>();
-
-        // Claim APT if any
-        let apt = &mut player_rewards.apt;
-        let value = coin::value(apt);
-        let coin = coin::extract(apt, value);
-        aptos_account::deposit_coins(sender_address, coin);
+        for (i in 0..vector::length(&user_rewards.nft_v2)){
+            let nft_details = vector::pop_back(&mut user_rewards.nft_v2);
+            let nft_object = object::address_to_object<TokenV2>(nft_details.token_v2);
+            object::transfer(&resource_account::get_signer(), nft_object, signer::address_of(sender));
+        };
 
         // Claim raffle tickets if any
-        let amount = player_rewards.raffle_ticket;
+        let amount = user_rewards.raffle_ticket;
         if (amount > 0) {
             raffle::mint_ticket(&resource_account::get_signer(), sender_address, amount);
-            player_rewards.raffle_ticket = 0;
+            user_rewards.raffle_ticket = 0;
         }
     }
 
-    // entry fun remove_added_nfts(sender: &signer) acquires LotteryManager, NFTStore, NFTV2Store {
-    //     assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
 
-    //     let nft_v1 = borrow_global_mut<LotteryManager>(resource_account::get_address()).nft_v1;
-    //     vector::for_each<Object<NFTStore>>(nft_v1, |nft| {
-    //         let NFTStore { token, token_floor_price } = move_from(object::object_address(&nft));
-    //         tokenv1::deposit_token(sender, token);
-    //     });
-
-    //     let nft_v2 = borrow_global_mut<LotteryManager>(resource_account::get_address()).nft_v2;
-    //     vector::for_each<Object<NFTV2Store>>(nft_v2, |nft| {
-    //         let NFTV2Store {
-    //             token_v2,
-    //             token_floor_price,
-    //             extend_ref,
-    //             delete_ref
-    //         } = move_from(object::object_address(&nft));
-
-    //         let token_signer = object::generate_signer_for_extending(&extend_ref);
-    //         object::transfer(&token_signer, token_v2, signer::address_of(sender));
-    //         object::delete(delete_ref);
-    //     });
-
-    //     let lottery_manager = borrow_global_mut<LotteryManager>(resource_account::get_address());
-
-    //     lottery_manager.nft_v1 = vector::empty<Object<NFTStore>>();
-    //     lottery_manager.nft_v2 = vector::empty<Object<NFTV2Store>>();
-    // }
-
-
-    fun process_fee(sender: &signer) acquires GameConfig{
-        let game_config = borrow_global<GameConfig>(resource_account::get_address());
-        let fees = coin::withdraw<AptosCoin>(sender, game_config.fees_apt);
-        house_treasury::merge_coins(fees);
+    fun process_fee<CoinType>(sender: &signer) acquires GameConfig{
+        let game_config = borrow_global<GameConfig<CoinType>>(resource_account::get_address());
+        let fees = coin::withdraw<CoinType>(sender, game_config.spin_fee);
+        house_treasury::merge_coins<CoinType>(fees);
     }
 
-    fun rand_u64_range(): u64 {
-        let tx_hash = transaction_context::get_transaction_hash();
+    fun rand_u64_range(i : u64): u64 {
+        let seed = transaction_context::get_transaction_hash();
         let timestamp = bcs::to_bytes(&timestamp::now_microseconds());
-        vector::append(&mut tx_hash, timestamp);
-        let hash = hash::sha3_256(tx_hash);
+        let i_bytes = bcs::to_bytes<u64>(&i);
+
+        vector::append(&mut seed, timestamp);
+        vector::append(&mut seed, i_bytes);
+
+        let hash = hash::sha3_256(seed);
         let value = bytes_to_u64(hash);
         value % 10000
     }
 
 
-    fun handle_tier(
+
+    //    TIERS		    10000	0-10000
+    //#############################################
+    // 0  NFT -		    100	    0-100
+    // 1  1M GUI - 	    10	    100-110
+    // 2  100K GUI - 	500 	110-610
+    // 3  20K GUI - 	1500	610-2110
+    // 4  7.5K GUI - 	2500 	2110-4610
+    // 5  5K DEFY -	    100	    4610-4710
+    // 6  2.5K DEFY -	200 	4710-4910
+    // 7  500 DEFY - 	1000	4910-5910
+    // 8  100 DEFY - 	1500	5910-7410
+    // 9  10 TICKETS -  100 	7410-7510
+    // 10 5 TICKETS - 	1100	7510-8610
+    // 11 2 TICKETS - 	1390	8610-10000
+
+    fun handle_tier<CoinType>(
         sender: &signer,
-        random_num: u64
-    ) acquires LotteryManager, Rewards {
-        let rewards = &mut borrow_global_mut<Rewards>(resource_account::get_address()).rewards;
-        if(!table::contains(rewards, signer::address_of(sender))){
-            table::add(rewards, signer::address_of(sender), Reward {
-                nft: vector::empty<Object<NFTStore>>(),
-                nft_v2: vector::empty<Object<NFTV2Store>>(),
-                apt: coin::zero<AptosCoin>(),
-                free_spin: vector::empty<u64>(),
-                raffle_ticket: 0,
-                waitlist_coins: 0,
-            })};
-
-        let reward_address = if (type == 0) {
-            option::some(object::object_address(option::borrow(&nft_store)))
-        } else if (type == 1) {
-            option::some(object::object_address(option::borrow(&nft_v2_store)))
-        } else {
-            option::none()
-        };
-
-        let player_rewards = table::borrow_mut(rewards, signer::address_of(sender));
+        tier: u64
+    ) acquires  UserRewards, UserCoinRewards, NFTs, GameConfig {
+        let user_rewards = borrow_global_mut<UserRewards>(signer::address_of(sender));
+        let user_coin_rewards = borrow_global_mut<UserCoinRewards<CoinType>>(signer::address_of(sender));
+        let game_config = borrow_global_mut<GameConfig<CoinType>>(resource_account::get_address());
 
         if (tier == 0) {
-            if (type == 0){
-                let sender_nfts = &mut player_rewards.nft;
-                let nft_address = object::object_address(option::borrow(&nft_store));
-                vector::push_back(sender_nfts, *option::borrow(&nft_store));
-                let nfts = &mut borrow_global_mut<LotteryManager>(resource_account::get_address()).nft_v1;
-                vector::remove_value(nfts, option::borrow(&nft_store));
-                emit_event(string::utf8(b"NFT v1"), 1, option::some(nft_address), signer::address_of(sender));
-            } else if (type == 1) {
-                let sender_nfts_v2 = &mut player_rewards.nft_v2;
-                let nft_v2_address = object::object_address(option::borrow(&nft_v2_store));
-                vector::push_back(sender_nfts_v2, *option::borrow(&nft_v2_store));
-                let nfts_v2 = &mut borrow_global_mut<LotteryManager>(resource_account::get_address()).nft_v2;
-                vector::remove_value(nfts_v2, option::borrow(&nft_v2_store));
-                emit_event(string::utf8(b"NFT v2"), 1, option::some(nft_v2_address), signer::address_of(sender));
-            } else {
-                abort E_ERROR_INVALID_TYPE
+            let nfts = borrow_global_mut<NFTs>(resource_account::get_address());
+            if(vector::length(&nfts.nft_v1_vector) > 0){
+                let nft_v1 = vector::pop_back(&mut nfts.nft_v1_vector);
+                vector::push_back(&mut user_rewards.nft_v1, nft_v1);
+            }else if (vector::length(&nfts.nft_v2_vector) > 0){
+                let nft_v2 = vector::pop_back(&mut nfts.nft_v2_vector);
+                vector::push_back(&mut user_rewards.nft_v2, nft_v2);
+            } else{
+                abort E_NO_NFTS_LEFT_IN_CONTRACT
             }
         } else if (tier == 1) {
-            // 2x apt_balance amount
-            let apt = &mut borrow_global_mut<LotteryManager>(resource_account::get_address()).apt_balance;
-            let coin_amount = 2 * fee_amount;
-            let coin = coin::extract(apt, coin_amount);
-            coin::merge(&mut player_rewards.apt, coin);
-
-            let reward_type = string::utf8(b"2x APT REWARD");
-            // string::append(&mut reward_type, string::utf8(bcs::to_bytes(&coin_amount)));
-            emit_event(reward_type, coin_amount, reward_address, signer::address_of(sender));
+            let coin_tier_value = *vector::borrow(&game_config.coin_reward_tiers_amounts, 0);
+            let coins = house_treasury::extract_coins<CoinType>(coin_tier_value);
+            coin::merge(&mut user_coin_rewards.coin, coins);
         } else if (tier == 2) {
-            // 1 free spin
-            vector::push_back(&mut player_rewards.free_spin, winning_percentage);
-            emit_event(string::utf8(b"Free Spin"), 1, reward_address, signer::address_of(sender));
+            let coin_tier_value = *vector::borrow(&game_config.coin_reward_tiers_amounts, 1);
+            let coins = house_treasury::extract_coins<CoinType>(coin_tier_value);
+            coin::merge(&mut user_coin_rewards.coin, coins);
         } else if (tier == 3) {
-            // 50% of the apt_balance amount
-            let apt = &mut borrow_global_mut<LotteryManager>(resource_account::get_address()).apt_balance;
-            let coin_amount = fee_amount / 2;
-            let coin = coin::extract(apt, coin_amount);
-            coin::merge(&mut player_rewards.apt, coin);
-
-            let reward_type = string::utf8(b"50% APT CASHBACK");
-            // string::append(&mut reward_type, string::utf8(bcs::to_bytes(&coin_amount)));
-            emit_event(reward_type, coin_amount, reward_address, signer::address_of(sender));
+            let coin_tier_value = *vector::borrow(&game_config.coin_reward_tiers_amounts, 2);
+            let coins = house_treasury::extract_coins<CoinType>(coin_tier_value);
+            coin::merge(&mut user_coin_rewards.coin, coins);
         } else if (tier == 4) {
-            // 40% of the apt_balance amount
-            let apt = &mut borrow_global_mut<LotteryManager>(resource_account::get_address()).apt_balance;
-            let coin_amount = (fee_amount * 4) / 10;
-            let coin = coin::extract(apt, coin_amount);
-            coin::merge(&mut player_rewards.apt, coin);
-
-            let reward_type = string::utf8(b"40% APT CASHBACK");
-            // string::append(&mut reward_type, string::utf8(bcs::to_bytes(&coin_amount)));
-            emit_event(reward_type, coin_amount, reward_address, signer::address_of(sender));
+            let coin_tier_value = *vector::borrow(&game_config.coin_reward_tiers_amounts, 3);
+            let coins = house_treasury::extract_coins<CoinType>(coin_tier_value);
+            coin::merge(&mut user_coin_rewards.coin, coins);
         } else if (tier == 5) {
-            // 30% of the apt_balance amount
-            let apt = &mut borrow_global_mut<LotteryManager>(resource_account::get_address()).apt_balance;
-            let coin_amount = (fee_amount * 3) / 10;
-            let coin = coin::extract(apt, coin_amount);
-            coin::merge(&mut player_rewards.apt, coin);
-
-            let reward_type = string::utf8(b"30% APT CASHBACK");
-            // string::append(&mut reward_type, string::utf8(bcs::to_bytes(&coin_amount)));
-            emit_event(reward_type, coin_amount, reward_address, signer::address_of(sender));
+            user_rewards.waitlist_coins = user_rewards.waitlist_coins + 5000;
         } else if (tier == 6) {
-            // 1 raffle ticket
-            player_rewards.raffle_ticket = player_rewards.raffle_ticket + 1;
-            emit_event(string::utf8(b"Raffle Ticket"), 1, reward_address, signer::address_of(sender));
+            user_rewards.waitlist_coins = user_rewards.waitlist_coins + 2500;
         } else if (tier == 7) {
-            // waitlist coins at price - 1 apt = 3000 coins
-            let waitlist_coins_amount = (WAITLIST_COINS_PRICE_PER_APTOS * fee_amount) / WAITLIST_COINS_PRICE_PER_APTOS_DIVISOR;
-            player_rewards.waitlist_coins = player_rewards.waitlist_coins + waitlist_coins_amount;
-            emit_event(string::utf8(b"Waitlist Coins"), waitlist_coins_amount, reward_address, signer::address_of(sender));
+            user_rewards.waitlist_coins = user_rewards.waitlist_coins + 500;
+        } else if (tier == 8) {
+            user_rewards.waitlist_coins = user_rewards.waitlist_coins + 100;
+        } else if (tier == 9) {
+            user_rewards.raffle_ticket = user_rewards.raffle_ticket + 10;
+        } else if (tier == 10) {
+            user_rewards.raffle_ticket = user_rewards.raffle_ticket + 5;
+        } else if (tier == 11) {
+            user_rewards.raffle_ticket = user_rewards.raffle_ticket + 2;
         } else {
             abort E_REWARD_TIER_OUT_OF_BOUNDS
         };
@@ -387,30 +350,53 @@ module mini_games::wheel {
 
 
 
-    fun allot_tier(n: u64, random_num: u64): u64 {
-        if (random_num < n) {
+    //    TIERS		    10000	0-10000
+    //#############################################
+    // 0  NFT -		    100	    0-100
+    // 1  1M GUI - 	    10	    100-110
+    // 2  100K GUI - 	500 	110-610
+    // 3  20K GUI - 	1500	610-2110
+    // 4  7.5K GUI - 	2500 	2110-4610
+    // 5  5K DEFY -	    100	    4610-4710
+    // 6  2.5K DEFY -	200 	4710-4910
+    // 7  500 DEFY - 	1000	4910-5910
+    // 8  100 DEFY - 	1500	5910-7410
+    // 9  10 TICKETS -  100 	7410-7510
+    // 10 5 TICKETS - 	1100	7510-8610
+    // 11 2 TICKETS - 	1390	8610-10000
+
+    fun allot_tier(random_num: u64): u64 {
+        if (random_num < 100) {
             0
-        } else if (random_num < ( 2 * n )) {
+        } else if (random_num < 110) {
             1
-        } else if (random_num < ( 2 * n + (5  * DIVISOR))) {
+        } else if (random_num < 610) {
             2
-        } else if (random_num < ( 2 * n + (13 * DIVISOR) )) {
+        } else if (random_num < 2110) {
             3
-        } else if (random_num < ( 2 * n + (28 * DIVISOR) )) {
+        } else if (random_num <  4610) {
             4
-        } else if (random_num < ( 2 * n + (48 * DIVISOR) )) {
+        } else if (random_num < 4710) {
             5
-        } else if (random_num < ( n + (69 * DIVISOR) )) {
+        } else if (random_num < 4910) {
             6
-        } else if (random_num < 100 * DIVISOR) {
+        } else if (random_num < 5910) {
             7
+        } else if (random_num < 7410) {
+            8
+        } else if (random_num < 7510) {
+            9
+        } else if (random_num < 8610) {
+            10
+        } else if (random_num < 10000) {
+            11
         } else {
             abort E_RANDOM_NUM_OUT_OF_BOUNDS
         }
     }
 
-    fun check_status(): bool acquires GameConfig {
-        borrow_global<GameConfig>(resource_account::get_address()).active
+    fun check_status<CoinType>(): bool acquires GameConfig {
+        borrow_global<GameConfig<CoinType>>(resource_account::get_address()).active
     }
 
     fun bytes_to_u64(bytes: vector<u8>): u64 {
