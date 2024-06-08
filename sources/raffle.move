@@ -321,7 +321,7 @@ module mini_games::raffle {
         if (raffle_type == 1) {
             let raffle_manager = borrow_global_mut<NftRaffleManager>(resource_account::get_address());
             let nft_raffle_store = table::borrow(&mut raffle_manager.nft_v1_raffles, raffle_id);
-            let NFTRaffle { token, participants, active } = move_from(object::object_address(nft_raffle_store));
+            let NFTRaffle { token, participants, active } = move_from<NFTRaffle>(object::object_address(nft_raffle_store));
 
             let num_participants = smart_vector::length(&participants);
 
@@ -344,7 +344,7 @@ module mini_games::raffle {
         } else if (raffle_type == 2) {
             let raffle_manager = borrow_global_mut<NftRaffleManager>(resource_account::get_address());
             let nft_v2_raffle_store = table::borrow_mut(&mut raffle_manager.nft_v2_raffles, raffle_id);
-            let NFTV2Raffle { token_v2, participants, active, extend_ref, delete_ref } = move_from(object::object_address(nft_v2_raffle_store));
+            let NFTV2Raffle { token_v2, participants, active, extend_ref, delete_ref } = move_from<NFTV2Raffle>(object::object_address(nft_v2_raffle_store));
 
             let num_participants = smart_vector::length(&participants);
 
