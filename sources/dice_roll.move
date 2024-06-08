@@ -11,6 +11,7 @@ module mini_games::dice_roll {
     use aptos_framework::transaction_context;
     use aptos_framework::type_info;
 
+
     use mini_games::resource_account_manager as resource_account;
     use mini_games::house_treasury;
 
@@ -32,13 +33,12 @@ module mini_games::dice_roll {
     const E_ERROR_INVALID_COIN: u64 = 8;
     /// the game for the coin type already exists
     const E_GAME_FOR_COIN_TYPE_DOES_ALREADY_EXIST: u64 = 9;
+    /// allowed bet types are : 0, 1
+    const E_ERROR_INVALID_BET_TYPE: u64 = 10;
 
 
-    const DIVISOR: u64 = 100;
-    const MULTIPLIER: u64 = 10;
-    const FEE_MULTIPLIER: u64 = 10;
-    const WAITLIST_COINS_PRICE_PER_APTOS: u64 = 3000;
-    const WAITLIST_COINS_PRICE_PER_APTOS_DIVISOR: u64 = 100000000;
+    const EVEN_ODD_MULTIPLIER : u64 = 150;
+    const DIVISOR : u64 = 100;
 
 
     #[event]
@@ -46,10 +46,14 @@ module mini_games::dice_roll {
         dice_one_value : u64,
         dice_two_value : u64,
         sum : u64,
+        bet_multiplier : u64,
         player : address,
         coin_type: String,
         amount_won: u64,
+        bet_type: u64,
+        side: bool,
         bet_amounts: vector<u64>,
+        total_bet_amount: u64,
         defy_coins_won: u64
     }
 
@@ -122,31 +126,43 @@ module mini_games::dice_roll {
 
     entry fun play_multiple<CoinType>(
         sender: &signer,
+        bet_type: u64,
         bet_amounts: vector<u64>,
+        side: bool, // even - true, odd - false
+        bet_even_odd: u64,
         num_plays: u64
     ) acquires GameManager, PlayerRewards {
         for (i in 0..num_plays) {
-            play<CoinType>(sender, bet_amounts);
+            play<CoinType>(sender, bet_type, bet_amounts, side, bet_even_odd);
         }
     }
 
     entry fun play<CoinType>(
         sender: &signer,
+        bet_type: u64,
         bet_amounts: vector<u64>,
+        side: bool, // even - true, odd - false
+        bet_even_odd: u64
     ) acquires GameManager, PlayerRewards {
-
         assert!(exists<GameManager<CoinType>>(resource_account::get_address()), E_GAME_FOR_COIN_TYPE_DOES_NOT_EXIST);
 
         let game_manager = borrow_global_mut<GameManager<CoinType>>(resource_account::get_address());
         assert!(game_manager.active, E_GAME_PAUSED);
-        assert!(vector::length(&bet_amounts) == 11, E_ERROR_INVALID_BET_AMOUNTS);
 
         let total_bet_coins : u64 = 0;
-
-        for ( i in 0..11){
-            let bet  = vector::borrow<u64>( &bet_amounts, i);
-            total_bet_coins = total_bet_coins + *bet;
+        if (bet_type == 0){
+            for ( i in 0..11){
+                assert!(vector::length(&bet_amounts) == 11, E_ERROR_INVALID_BET_AMOUNTS);
+                let bet  = vector::borrow<u64>( &bet_amounts, i);
+                total_bet_coins = total_bet_coins + *bet;
+            };
+        } else if (bet_type == 1){
+            total_bet_coins  = bet_even_odd;
+        } else {
+            abort E_ERROR_INVALID_BET_TYPE
         };
+
+
 
         assert!(total_bet_coins <= game_manager.max_bet_amount, E_ERROR_BET_AMOUNT_EXCEEDS_MAX);
         assert!(total_bet_coins >= game_manager.min_bet_amount, E_ERROR_BET_AMOUNT_BELOW_MIN);
@@ -160,7 +176,7 @@ module mini_games::dice_roll {
 
         let sum = dice_one_value + dice_two_value;
 
-        handle_roll<CoinType>(sender, dice_one_value, dice_two_value, sum, bet_amounts, total_bet_coins);
+        handle_roll<CoinType>(sender, dice_one_value, dice_two_value, sum, bet_type, bet_amounts, total_bet_coins, side);
 
     }
 
@@ -230,9 +246,11 @@ module mini_games::dice_roll {
         sender: &signer, 
         dice_one_value: u64,
         dice_two_value: u64,
-        dice_sum: u64, 
+        dice_sum: u64,
+        bet_type: u64,
         bet_amounts : vector<u64>,
-        total_bet_coins: u64
+        total_bet_coins: u64,
+        side: bool
     ) acquires GameManager, PlayerRewards {
 
         if(!exists<PlayerRewards<CoinType>>(signer::address_of(sender))){
@@ -247,11 +265,23 @@ module mini_games::dice_roll {
         let player_rewards = borrow_global_mut<PlayerRewards<CoinType>>(signer::address_of(sender));
         player_rewards.num_plays = player_rewards.num_plays + 1;
 
-        let bet_amount = vector::borrow<u64>(&bet_amounts, dice_sum - 2);
-        let amount_won = *bet_amount * get_sum_multiplier(dice_sum);
-        let defy_coins_won = add_coins_to_player_rewards_and_calculate_defy_coins_won(amount_won, player_rewards, defy_coins_exchange_rate, total_bet_coins);
-        emit_play_event(dice_one_value, dice_two_value, dice_sum, signer::address_of(sender) , type_info::type_name<CoinType>(), amount_won, bet_amounts, defy_coins_won);
-
+        if (bet_type == 0){
+            let multiplier = get_sum_multiplier(dice_sum);
+            let bet_amount = vector::borrow<u64>(&bet_amounts, dice_sum - 2);
+            let amount_won = (*bet_amount * multiplier) / DIVISOR;
+            let defy_coins_won = add_coins_to_player_rewards_and_calculate_defy_coins_won(amount_won, player_rewards, defy_coins_exchange_rate, total_bet_coins);
+            emit_play_event(dice_one_value, dice_two_value, dice_sum, multiplier, signer::address_of(sender) , type_info::type_name<CoinType>(), amount_won, bet_type , side, bet_amounts, total_bet_coins, defy_coins_won);
+        } else if (bet_type == 1){
+            let amount_won = if (side == (dice_sum % 2 == 0)){
+                (total_bet_coins * EVEN_ODD_MULTIPLIER) / DIVISOR
+            } else {
+                0
+            };
+            let defy_coins_won = add_coins_to_player_rewards_and_calculate_defy_coins_won(amount_won, player_rewards, defy_coins_exchange_rate, total_bet_coins);
+            emit_play_event(dice_one_value, dice_two_value, dice_sum, EVEN_ODD_MULTIPLIER, signer::address_of(sender) , type_info::type_name<CoinType>(), amount_won, bet_type , side, bet_amounts, total_bet_coins, defy_coins_won);
+        } else {
+            abort E_ERROR_INVALID_BET_TYPE
+        };
 
     }
 
@@ -260,27 +290,27 @@ module mini_games::dice_roll {
         dice_sum : u64
     ): u64{
         if (dice_sum == 2){
-           12
+           1200
         } else if (dice_sum == 3){
-            10
+            1000
         } else if (dice_sum == 4){
-            8
+            800
         } else if (dice_sum == 5){
-            6
+            600
         } else if (dice_sum == 6){
-            4
+            400
         } else if (dice_sum == 7){
-            2
+            200
         } else if (dice_sum == 8){
-            4
+            400
         } else if (dice_sum == 9){
-            6
+            600
         } else if (dice_sum == 10){
-            8
+            800
         } else if (dice_sum == 11){
-            10
+            1000
         } else if (dice_sum == 12){
-            12
+            1200
         } else {
             abort E_DICE_SUM_OUT_OF_BOUNDS
         }
@@ -313,16 +343,20 @@ module mini_games::dice_roll {
     }
 
 
-    fun emit_play_event(dice_one_value: u64, dice_two_value: u64, sum: u64, player: address, coin_type: String, amount_won: u64, bet_amounts: vector<u64>, defy_coins_won: u64) {
-     
+    fun emit_play_event(dice_one_value: u64, dice_two_value: u64, sum: u64, bet_multiplier : u64, player: address, coin_type: String, amount_won: u64, bet_type: u64, side: bool, bet_amounts: vector<u64>, total_bet_amount: u64, defy_coins_won: u64) {
+
         0x1::event::emit(PlayEvent {
             dice_one_value,
             dice_two_value,
             sum,
+            bet_multiplier,
             player,
             coin_type,
             amount_won,
+            bet_type,
+            side,
             bet_amounts,
+            total_bet_amount,
             defy_coins_won
         });
     }
