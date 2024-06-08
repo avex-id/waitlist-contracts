@@ -1,20 +1,16 @@
 module mini_games::raffle {
-    use std::bcs;
-    use std::hash;
     use std::signer;
     use std::vector;
     use std::string::{Self, String};
 
     use aptos_std::smart_vector::{Self, SmartVector};
-    use aptos_std::big_vector::{Self, BigVector};
-    use aptos_std::table_with_length::{Self, TableWithLength};
-    use aptos_std::object::{Self, Object, DeleteRef, ExtendRef}; 
+    use aptos_std::object::{Self, Object, DeleteRef, ExtendRef};
 
     use aptos_framework::aptos_account;
     use aptos_framework::coin::{Self, Coin};
     use aptos_framework::table::{Self, Table};
     use aptos_framework::timestamp;
-    use aptos_framework::transaction_context;
+    use aptos_framework::randomness;
     use aptos_framework::type_info;
 
     use aptos_token::token::{Self as tokenv1, Token as TokenV1};
@@ -41,6 +37,8 @@ module mini_games::raffle {
     const E_EXCESSIVE_TICKETS: u64 = 8;
     /// cannot use more than 100 tickets in a single transaction, you can do multiple transactions
     const E_CANNOT_USE_EXCESSIVE_TICKETS: u64 = 9;
+    /// depriciated function, please use the new version
+    const E_DEPRICIATED: u64 = 10;
 
     struct RaffleManager has key {
         tickets: Table<address, u64>,
@@ -282,7 +280,8 @@ module mini_games::raffle {
         
     } 
 
-    public entry fun pick_winner_coin_raffle<X>(admin: &signer, raffle_id: u64, num_winners: u64) 
+    #[randomness]
+    entry fun pick_winner_coin_raffle_v_2<X>(admin: &signer, raffle_id: u64, num_winners: u64)
     acquires RaffleManager, CoinRaffleManager {
         assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
         assert!(check_status(), E_ERROR_RAFFLE_PAUSED);
@@ -299,10 +298,10 @@ module mini_games::raffle {
         
         while( i < num_winners ) {
             i = i + 1;
-            let rand_num = rand_u64_range(i);
             let num_participants = smart_vector::length(&coin_raffle.participants);
+            let rand_num = randomness::u64_range(0, num_participants);
             assert!(num_participants > 0, E_NO_PARTICIPANTS);
-            let winner = smart_vector::borrow(&mut coin_raffle.participants, rand_num % num_participants);
+            let winner = smart_vector::borrow(&mut coin_raffle.participants, rand_num);
             let coin = coin::extract(&mut coin_raffle.coin, num_coins);
             aptos_account::deposit_coins(*winner, coin);
             emit_raffle_winner_event(type_info::type_name<X>(), 0, raffle_id, num_coins, *winner);
@@ -311,12 +310,13 @@ module mini_games::raffle {
 
     }
 
-    public entry fun pick_winner_nft_raffle(admin: &signer, raffle_type: u64, raffle_id: u64) 
+    #[randomness]
+    entry fun pick_winner_nft_raffle_v_2(admin: &signer, raffle_type: u64, raffle_id: u64)
     acquires RaffleManager, NftRaffleManager, NFTRaffle, NFTV2Raffle, PastParticipants{
         assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
         assert!(check_status(), E_ERROR_RAFFLE_PAUSED);
 
-        let rand_num = rand_u64_range(1);
+        let rand_num = randomness::u64_integer();
 
         if (raffle_type == 1) {
             let raffle_manager = borrow_global_mut<NftRaffleManager>(resource_account::get_address());
@@ -365,6 +365,13 @@ module mini_games::raffle {
         } else {
             abort E_ERROR_INVALID_TYPE
         }
+    }
+
+    public entry fun pick_winner_coin_raffle<X>(_admin: &signer, _raffle_id: u64, _num_winners: u64){
+        abort E_DEPRICIATED
+    }
+    public entry fun pick_winner_nft_raffle(_admin: &signer, _raffle_type: u64, _raffle_id: u64){
+        abort E_DEPRICIATED
     }
 
     public entry fun toggle_coin_raffle<X>(admin: &signer, raffle_id: u64) acquires CoinRaffleManager {
@@ -495,16 +502,7 @@ module mini_games::raffle {
 
 
     fun rand_u64_range(i: u64): u64 {
-        let tx_hash = transaction_context::get_transaction_hash();
-        let timestamp = bcs::to_bytes(&timestamp::now_microseconds());
-        let i_bytes = bcs::to_bytes<u64>(&i);
-
-        let seed = tx_hash;
-        vector::append(&mut seed, timestamp);
-        vector::append(&mut seed, i_bytes);
-        let hash = hash::sha3_256(seed);
-        let value = bytes_to_u64(hash);
-        value
+        abort E_DEPRICIATED
     }
 
     fun bytes_to_u64(bytes: vector<u8>): u64 {

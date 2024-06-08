@@ -1,6 +1,4 @@
 module mini_games::nft_lottery {
-    use std::bcs;
-    use std::hash;
     use std::option::{Self, Option};
     use std::signer;
     use std::string::{Self, String};
@@ -15,7 +13,7 @@ module mini_games::nft_lottery {
     use aptos_framework::coin::{Self, Coin};
     use aptos_framework::table::{Self, Table};
     use aptos_framework::timestamp;
-    use aptos_framework::transaction_context;
+    use aptos_framework::randomness;
 
     use mini_games::resource_account_manager as resource_account;
     use mini_games::raffle;
@@ -231,13 +229,14 @@ module mini_games::nft_lottery {
         nft_v2_store.token_floor_price = token_floor_price;
     }
 
+    #[randomness]
     entry fun play_v1_multiple(
         sender: &signer,
         winning_percentage: u64,
         use_free_spin: bool,  // Use free spin if available
         nft_store: Object<NFTStore>,
         number_of_spins: u64,
-    ) acquires  LotteryManager, NFTStore, Rewards, Counter{
+    ) acquires  LotteryManager, NFTStore, Rewards{
         assert!(check_is_nft_v1_still_valid(nft_store) , E_ERROR_NFT_ALREADY_WON);
         assert!(number_of_spins <= MAX_SPINS, E_SPIN_NUM_OUT_OF_BOUND);
         assert!(number_of_spins > 0, E_ERROR_UNAUTHORIZED);
@@ -252,12 +251,13 @@ module mini_games::nft_lottery {
         }
     }
 
+    #[randomness]
     entry fun play_v1(
         sender: &signer,
         winning_percentage: u64,
         use_free_spin: bool,  // Use free spin if available
         nft_store: Object<NFTStore>,
-    ) acquires LotteryManager, NFTStore, Rewards, Counter {
+    ) acquires LotteryManager, NFTStore, Rewards {
         assert!(check_status(), E_ERROR_LOTTERY_PAUSED);
         // assert!(winning_percentage >= 0 && winning_percentage <= 100, E_ERROR_PERCENTAGE_OUT_OF_BOUNDS);
         assert!(check_percentage_bounds(winning_percentage), E_ERROR_PERCENTAGE_OUT_OF_BOUNDS);
@@ -292,25 +292,20 @@ module mini_games::nft_lottery {
             coin::merge<AptosCoin>(&mut lottery_manager.apt_balance, fees);
         };
 
-        if(!exists<Counter>(resource_account::get_address())){
-            move_to<Counter>(&resource_account::get_signer(), Counter{counter: 0});
-        };
-
-        let counter = borrow_global_mut<Counter>(resource_account::get_address());
-        let random_num = rand_u64_range(counter.counter);
-        counter.counter = counter.counter + 1;
+        let random_num = randomness::u64_range(0, 10000);
 
         let tier = allot_tier(winning_percentage * MULTIPLIER, random_num);
         handle_tier(sender, tier, winning_percentage, spin_cost + service_fee, option::some(nft_store), option::none(), 0);
     }
 
+    #[randomness]
     entry fun play_v2_multiple(
         sender: &signer,
         winning_percentage: u64,
         use_free_spin: bool,  // Use free spin if available
         nft_v2_store: Object<NFTV2Store>,
         number_of_spins: u64,
-    ) acquires  LotteryManager, NFTV2Store, Rewards, Counter{
+    ) acquires  LotteryManager, NFTV2Store, Rewards{
         assert!(check_is_nft_v2_still_valid(nft_v2_store), E_ERROR_NFT_ALREADY_WON);
         assert!(number_of_spins <= MAX_SPINS, E_SPIN_NUM_OUT_OF_BOUND);
         assert!(number_of_spins > 0, E_ERROR_UNAUTHORIZED);
@@ -330,7 +325,7 @@ module mini_games::nft_lottery {
         winning_percentage: u64,
         use_free_spin: bool,  // Use free spin if available
         nft_v2_store: Object<NFTV2Store>,
-    ) acquires LotteryManager, NFTV2Store, Rewards, Counter {
+    ) acquires LotteryManager, NFTV2Store, Rewards {
         assert!(check_status(), E_ERROR_LOTTERY_PAUSED);
         // assert!(winning_percentage >= (0 * DIVISOR) && winning_percentage <= (100 * DIVISOR), E_ERROR_PERCENTAGE_OUT_OF_BOUNDS);
         assert!(check_percentage_bounds(winning_percentage), E_ERROR_PERCENTAGE_OUT_OF_BOUNDS);
@@ -364,13 +359,7 @@ module mini_games::nft_lottery {
             coin::merge<AptosCoin>(&mut lottery_manager.apt_balance, fees);
         };
 
-        if(!exists<Counter>(resource_account::get_address())){
-            move_to<Counter>(&resource_account::get_signer(), Counter{counter: 0});
-        };
-
-        let counter = borrow_global_mut<Counter>(resource_account::get_address());
-        let random_num = rand_u64_range(counter.counter);
-        counter.counter = counter.counter + 1;
+        let random_num = randomness::u64_range(0, 10000);
         let tier = allot_tier(winning_percentage * MULTIPLIER, random_num);
         handle_tier(sender, tier, winning_percentage, spin_cost + service_fee, option::none(), option::some(nft_v2_store), 1);
     }
@@ -463,15 +452,8 @@ module mini_games::nft_lottery {
     //     lottery_manager.nft_v2 = vector::empty<Object<NFTV2Store>>();
     // }
 
-    fun rand_u64_range(i: u64): u64 {
-        let tx_hash = transaction_context::get_transaction_hash();
-        let timestamp = bcs::to_bytes(&timestamp::now_microseconds());
-        vector::append(&mut tx_hash, timestamp);
-        let i_bytes = bcs::to_bytes<u64>(&i);
-        vector::append(&mut tx_hash, i_bytes);
-        let hash = hash::sha3_256(tx_hash);
-        let value = bytes_to_u64(hash);
-        value % 10000
+    fun rand_u64_range(_i: u64): u64 {
+        abort E_DEPRICIATED
     }
 
     fun check_percentage_bounds(percentage: u64): bool {
