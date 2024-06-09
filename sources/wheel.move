@@ -1,8 +1,8 @@
 module mini_games::wheel {
-    use std::bcs;
-    use std::hash;
+
     use std::option::{Option};
     use std::signer;
+    use std::string;
     use std::string::{String};
     use std::vector;
 
@@ -12,7 +12,7 @@ module mini_games::wheel {
 
     use aptos_framework::coin::{Self, Coin};
     use aptos_framework::timestamp;
-    use aptos_framework::transaction_context;
+    use aptos_framework::randomness;
 
     use mini_games::resource_account_manager as resource_account;
     use mini_games::raffle;
@@ -37,6 +37,8 @@ module mini_games::wheel {
     const NUM_COIN_REWARD_TIERS: u64 = 4;
 
 
+
+    // TODO : remove this in mainnet deployment
     #[event]
     struct RewardEvent has drop, store {
         reward_type: String,
@@ -45,7 +47,7 @@ module mini_games::wheel {
         player: address,
         timestamp: u64,
     }
-
+    // TODO : remove this in mainnet deployment
     struct Counter has key {
         counter: u64
     }
@@ -83,6 +85,15 @@ module mini_games::wheel {
         coin : Coin<Cointype>
     }
 
+    #[event]
+    struct PlayEvent has drop, store {
+        player: address,
+        reward_tier: u64,
+        reward_type: String,
+        reward_amount: u64,
+        timestamp: u64,
+    }
+
 
     fun init_module(admin: &signer) {
         // Initialize the lottery manager
@@ -91,11 +102,6 @@ module mini_games::wheel {
             nft_v1_vector: vector::empty<NFT_V1>(),
             nft_v2_vector: vector::empty<NFT_V2>(),
         });
-
-        move_to<Counter>(&resource_account::get_signer(), Counter {
-            counter: 0
-        });
-
     }
 
     entry fun add_or_change_game_config<CoinType>(sender: &signer, spin_fee: u64, coin_reward_tiers_amounts: vector<u64>) acquires GameConfig {
@@ -181,12 +187,11 @@ module mini_games::wheel {
     entry fun play<CoinType>(
         sender: &signer
         // no_of_spins: u64
-    ) acquires GameConfig, NFTs, Counter, UserCoinRewards, UserRewards {
+    ) acquires GameConfig, UserRewards, UserCoinRewards, NFTs{
         assert!(check_status<CoinType>(), E_ERROR_LOTTERY_PAUSED);
         process_fee<CoinType>(sender);
-        let counter_resouce = borrow_global_mut<Counter>(resource_account::get_address());
-        let random_num = rand_u64_range(counter_resouce.counter);
-        counter_resouce.counter = counter_resouce.counter + 1;
+
+        let random_num = randomness::u64_range(0,10000);
         let tier = allot_tier(random_num);
         handle_tier<CoinType>(sender, tier);
     }
@@ -264,22 +269,9 @@ module mini_games::wheel {
         house_treasury::merge_coins<CoinType>(fees);
     }
 
-    fun rand_u64_range(i : u64): u64 {
-        let seed = transaction_context::get_transaction_hash();
-        let timestamp = bcs::to_bytes(&timestamp::now_microseconds());
-        let i_bytes = bcs::to_bytes<u64>(&i);
-
-        vector::append(&mut seed, timestamp);
-        vector::append(&mut seed, i_bytes);
-
-        let hash = hash::sha3_256(seed);
-        let value = bytes_to_u64(hash);
-        value % 10000
-    }
 
 
-
-    //    TIERS		    10000	0-10000
+    // TIERS	RAND NUM RANGE	0-10000
     //#############################################
     // 0  NFT -		    100	    0-100
     // 1  1M GUI - 	    10	    100-110
@@ -298,6 +290,22 @@ module mini_games::wheel {
         sender: &signer,
         tier: u64
     ) acquires  UserRewards, UserCoinRewards, NFTs, GameConfig {
+
+        if(!exists<UserRewards>(signer::address_of(sender))){
+            move_to<UserRewards>(sender, UserRewards{
+                nft_v1: vector::empty<NFT_V1>(),
+                nft_v2: vector::empty<NFT_V2>(),
+                raffle_ticket: 0,
+                waitlist_coins: 0,
+            });
+        };
+
+        if(!exists<UserCoinRewards<CoinType>>(signer::address_of(sender))){
+            move_to<UserCoinRewards<CoinType>>(sender, UserCoinRewards<CoinType>{
+                coin: coin::zero<CoinType>(),
+            });
+        };
+
         let user_rewards = borrow_global_mut<UserRewards>(signer::address_of(sender));
         let user_coin_rewards = borrow_global_mut<UserCoinRewards<CoinType>>(signer::address_of(sender));
         let game_config = borrow_global_mut<GameConfig<CoinType>>(resource_account::get_address());
@@ -307,9 +315,11 @@ module mini_games::wheel {
             if(vector::length(&nfts.nft_v1_vector) > 0){
                 let nft_v1 = vector::pop_back(&mut nfts.nft_v1_vector);
                 vector::push_back(&mut user_rewards.nft_v1, nft_v1);
+                emit_play_event(signer::address_of(sender), tier, string::utf8(b"NFT_V1"), 1);
             }else if (vector::length(&nfts.nft_v2_vector) > 0){
                 let nft_v2 = vector::pop_back(&mut nfts.nft_v2_vector);
                 vector::push_back(&mut user_rewards.nft_v2, nft_v2);
+                emit_play_event(signer::address_of(sender), tier, string::utf8(b"NFT_V2"), 1);
             } else{
                 abort E_NO_NFTS_LEFT_IN_CONTRACT
             }
@@ -317,32 +327,43 @@ module mini_games::wheel {
             let coin_tier_value = *vector::borrow(&game_config.coin_reward_tiers_amounts, 0);
             let coins = house_treasury::extract_coins<CoinType>(coin_tier_value);
             coin::merge(&mut user_coin_rewards.coin, coins);
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"1M_GUI"), coin_tier_value);
         } else if (tier == 2) {
             let coin_tier_value = *vector::borrow(&game_config.coin_reward_tiers_amounts, 1);
             let coins = house_treasury::extract_coins<CoinType>(coin_tier_value);
             coin::merge(&mut user_coin_rewards.coin, coins);
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"100K_GUI"), coin_tier_value);
         } else if (tier == 3) {
             let coin_tier_value = *vector::borrow(&game_config.coin_reward_tiers_amounts, 2);
             let coins = house_treasury::extract_coins<CoinType>(coin_tier_value);
             coin::merge(&mut user_coin_rewards.coin, coins);
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"20K_GUI"), coin_tier_value);
         } else if (tier == 4) {
             let coin_tier_value = *vector::borrow(&game_config.coin_reward_tiers_amounts, 3);
             let coins = house_treasury::extract_coins<CoinType>(coin_tier_value);
             coin::merge(&mut user_coin_rewards.coin, coins);
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"7.5K_GUI"), coin_tier_value);
         } else if (tier == 5) {
             user_rewards.waitlist_coins = user_rewards.waitlist_coins + 5000;
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"5K_DEFY"), 5000);
         } else if (tier == 6) {
             user_rewards.waitlist_coins = user_rewards.waitlist_coins + 2500;
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"2.5K_DEFY"), 2500);
         } else if (tier == 7) {
             user_rewards.waitlist_coins = user_rewards.waitlist_coins + 500;
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"500_DEFY"), 500);
         } else if (tier == 8) {
             user_rewards.waitlist_coins = user_rewards.waitlist_coins + 100;
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"100_DEFY"), 100);
         } else if (tier == 9) {
             user_rewards.raffle_ticket = user_rewards.raffle_ticket + 10;
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"10_TICKETS"), 10);
         } else if (tier == 10) {
             user_rewards.raffle_ticket = user_rewards.raffle_ticket + 5;
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"5_TICKETS"), 5);
         } else if (tier == 11) {
             user_rewards.raffle_ticket = user_rewards.raffle_ticket + 2;
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"2_TICKETS"), 2);
         } else {
             abort E_REWARD_TIER_OUT_OF_BOUNDS
         };
@@ -409,14 +430,13 @@ module mini_games::wheel {
         return value
     }
 
-    fun emit_event(reward_type: String, reward_amount: u64, reward_address: Option<address>, player: address) {
-        let game_address = reward_address;
-        0x1::event::emit(RewardEvent {
+    fun emit_play_event(player: address, reward_tier: u64, reward_type: String, reward_amount: u64) {
+        0x1::event::emit(PlayEvent {
+            player,
+            reward_tier,
             reward_type,
             reward_amount,
-            game_address,
-            player,
-            timestamp: timestamp::now_microseconds(),
+            timestamp: timestamp::now_seconds(),
         });
     }
 
