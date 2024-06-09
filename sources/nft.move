@@ -384,7 +384,8 @@ module mini_games::nft_lottery {
 
         // Claim v1 NFTs if any
         vector::for_each<Object<NFTStore>>(player_rewards.nft, |nft| {
-            let NFTStore { token, token_floor_price } = move_from<NFTStore>(object::object_address(&nft));
+
+            let NFTStore { token, token_floor_price : _token_floor_price} = move_from<NFTStore>(object::object_address(&nft));
             tokenv1::deposit_token(sender, token);
             object::transfer(&resource_account::get_signer(), nft, sender_address);
         });
@@ -394,7 +395,8 @@ module mini_games::nft_lottery {
         vector::for_each<Object<NFTV2Store>>(player_rewards.nft_v2, |nft_v2| {
             let NFTV2Store {
                 token_v2,
-                token_floor_price,
+
+                token_floor_price: _token_floor_price, 
                 extend_ref,
                 delete_ref
             } = move_from<NFTV2Store>(object::object_address(&nft_v2));
