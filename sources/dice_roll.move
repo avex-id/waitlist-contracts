@@ -1,16 +1,13 @@
 module mini_games::dice_roll {
-    use std::bcs;
-    use std::hash;
+
     use std::signer;
     use std::vector;
     use std::string::{String};
 
     use aptos_framework::aptos_account;
     use aptos_framework::coin::{Self, Coin};
-    use aptos_framework::timestamp;
-    use aptos_framework::transaction_context;
     use aptos_framework::type_info;
-
+    use aptos_framework::randomness;
 
     use mini_games::resource_account_manager as resource_account;
     use mini_games::house_treasury;
@@ -170,8 +167,8 @@ module mini_games::dice_roll {
         let bet_coins = coin::withdraw<CoinType>(sender, total_bet_coins);
         house_treasury::merge_coins(bet_coins);
 
-        let dice_one_value = roll_dice(game_manager.counter);
-        let dice_two_value = roll_dice(game_manager.counter + 1);
+        let dice_one_value = randomness::u64_range(1, 7);
+        let dice_two_value = randomness::u64_range(1, 7);
         game_manager.counter = game_manager.counter + 2;
 
         let sum = dice_one_value + dice_two_value;
@@ -228,17 +225,6 @@ module mini_games::dice_roll {
             let coins = coin::extract(reward_coins, value);
             aptos_account::deposit_coins(signer::address_of(sender), coins);
         };
-    }
-
-    fun roll_dice(i: u64): u64 {
-        let tx_hash = transaction_context::get_transaction_hash();
-        let timestamp = bcs::to_bytes(&timestamp::now_seconds());
-        let i_bytes = bcs::to_bytes<u64>(&i);
-        vector::append(&mut tx_hash, timestamp);
-        vector::append(&mut tx_hash, i_bytes);
-        let hash = hash::sha3_256(tx_hash);
-        let value = bytes_to_u64(hash) % 6;
-        (value + 1)
     }
 
 

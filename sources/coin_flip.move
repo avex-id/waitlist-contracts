@@ -1,15 +1,13 @@
 module mini_games::coin_flip {
-    use std::bcs;
-    use std::hash;
+
     use std::signer;
     use std::vector;
     use std::string::{String};
 
     use aptos_framework::aptos_account;
     use aptos_framework::coin::{Self, Coin};
-    use aptos_framework::timestamp;
-    use aptos_framework::transaction_context;
     use aptos_framework::type_info;
+    use aptos_framework::randomness;
 
 
     use mini_games::resource_account_manager as resource_account;
@@ -63,7 +61,7 @@ module mini_games::coin_flip {
         min_bet_amount: u64,
         win_multiplier_numerator: u64,
         win_multiplier_denominator: u64,
-        counter: u64,
+        counter: u64, // TODO: remove before production
         // defy_coins_exchange_rate: u64,
     }
 
@@ -167,9 +165,7 @@ module mini_games::coin_flip {
         let bet_coins = coin::withdraw<CoinType>(sender, bet_amount);
         house_treasury::merge_coins(bet_coins);
 
-        let coin_flip_value = flip_coin(game_manager.counter);
-        game_manager.counter = game_manager.counter + 1;
-
+        let coin_flip_value = randomness::u64_range(0, 2);
 
         handle_roll<CoinType>(sender, coin_flip_value, selected_coin_face, bet_amount);
 
@@ -225,16 +221,6 @@ module mini_games::coin_flip {
         };
     }
 
-    fun flip_coin(i: u64): u64 {
-        let tx_hash = transaction_context::get_transaction_hash();
-        let timestamp = bcs::to_bytes(&timestamp::now_seconds());
-        let i_bytes = bcs::to_bytes<u64>(&i);
-        vector::append(&mut tx_hash, timestamp);
-        vector::append(&mut tx_hash, i_bytes);
-        let hash = hash::sha3_256(tx_hash);
-        let value = bytes_to_u64(hash) % 2;
-        value
-    }
 
 
     fun handle_roll<CoinType>(
