@@ -121,6 +121,7 @@ module mini_games::dice_roll {
         game_manager.defy_coins_exchange_rate = defy_coins_exchange_rate;
     }
 
+    #[randomness]
     entry fun play_multiple<CoinType>(
         sender: &signer,
         bet_type: u64,
@@ -134,6 +135,7 @@ module mini_games::dice_roll {
         }
     }
 
+    #[randomness]
     entry fun play<CoinType>(
         sender: &signer,
         bet_type: u64,

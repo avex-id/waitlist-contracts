@@ -184,6 +184,7 @@ module mini_games::wheel {
         object::transfer(sender, token_v2, resource_account::get_address());
     }
 
+    #[randomness]
     entry fun play<CoinType>(
         sender: &signer
         // no_of_spins: u64

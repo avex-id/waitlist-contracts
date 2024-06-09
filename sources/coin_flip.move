@@ -139,6 +139,7 @@ module mini_games::coin_flip {
     //     game_manager.defy_coins_exchange_rate = defy_coins_exchange_rate;
     // }
 
+    #[randomness]
     entry fun play_multiple<CoinType>(
         sender: &signer,
         selected_coin_face: u64, // TODO: can shift this to vector is  nedded
@@ -150,6 +151,7 @@ module mini_games::coin_flip {
         }
     }
 
+    #[randomness]
     entry fun play<CoinType>(
         sender: &signer,
         selected_coin_face: u64, // 0 - heads, 1 - tails
