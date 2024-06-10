@@ -13,6 +13,7 @@ module mini_games::wheel {
     use aptos_framework::coin::{Self, Coin};
     use aptos_framework::timestamp;
     use aptos_framework::randomness;
+    use aptos_framework::type_info;
 
     use mini_games::resource_account_manager as resource_account;
     use mini_games::raffle;
@@ -184,6 +185,18 @@ module mini_games::wheel {
         object::transfer(sender, token_v2, resource_account::get_address());
     }
 
+
+    #[randomness]
+    entry fun play_multiple<CoinType>(
+        sender: &signer,
+        no_of_spins: u64
+    ) acquires GameConfig, UserRewards, UserCoinRewards, NFTs{
+
+        for (i in 0..no_of_spins){
+            play<CoinType>(sender);
+        }
+    }
+
     #[randomness]
     entry fun play<CoinType>(
         sender: &signer
@@ -316,11 +329,11 @@ module mini_games::wheel {
             if(vector::length(&nfts.nft_v1_vector) > 0){
                 let nft_v1 = vector::pop_back(&mut nfts.nft_v1_vector);
                 vector::push_back(&mut user_rewards.nft_v1, nft_v1);
-                emit_play_event(signer::address_of(sender), tier, string::utf8(b"NFT_V1"), 1);
+                emit_play_event(signer::address_of(sender), tier, string::utf8(b"NFT v1"), 1);
             }else if (vector::length(&nfts.nft_v2_vector) > 0){
                 let nft_v2 = vector::pop_back(&mut nfts.nft_v2_vector);
                 vector::push_back(&mut user_rewards.nft_v2, nft_v2);
-                emit_play_event(signer::address_of(sender), tier, string::utf8(b"NFT_V2"), 1);
+                emit_play_event(signer::address_of(sender), tier, string::utf8(b"NFT v2"), 1);
             } else{
                 abort E_NO_NFTS_LEFT_IN_CONTRACT
             }
@@ -328,43 +341,43 @@ module mini_games::wheel {
             let coin_tier_value = *vector::borrow(&game_config.coin_reward_tiers_amounts, 0);
             let coins = house_treasury::extract_coins<CoinType>(coin_tier_value);
             coin::merge(&mut user_coin_rewards.coin, coins);
-            emit_play_event(signer::address_of(sender), tier, string::utf8(b"1M_GUI"), coin_tier_value);
+            emit_play_event(signer::address_of(sender), tier, type_info::type_name<CoinType>(), coin_tier_value);
         } else if (tier == 2) {
             let coin_tier_value = *vector::borrow(&game_config.coin_reward_tiers_amounts, 1);
             let coins = house_treasury::extract_coins<CoinType>(coin_tier_value);
             coin::merge(&mut user_coin_rewards.coin, coins);
-            emit_play_event(signer::address_of(sender), tier, string::utf8(b"100K_GUI"), coin_tier_value);
+            emit_play_event(signer::address_of(sender), tier, type_info::type_name<CoinType>(), coin_tier_value);
         } else if (tier == 3) {
             let coin_tier_value = *vector::borrow(&game_config.coin_reward_tiers_amounts, 2);
             let coins = house_treasury::extract_coins<CoinType>(coin_tier_value);
             coin::merge(&mut user_coin_rewards.coin, coins);
-            emit_play_event(signer::address_of(sender), tier, string::utf8(b"20K_GUI"), coin_tier_value);
+            emit_play_event(signer::address_of(sender), tier, type_info::type_name<CoinType>(), coin_tier_value);
         } else if (tier == 4) {
             let coin_tier_value = *vector::borrow(&game_config.coin_reward_tiers_amounts, 3);
             let coins = house_treasury::extract_coins<CoinType>(coin_tier_value);
             coin::merge(&mut user_coin_rewards.coin, coins);
-            emit_play_event(signer::address_of(sender), tier, string::utf8(b"7.5K_GUI"), coin_tier_value);
+            emit_play_event(signer::address_of(sender), tier, type_info::type_name<CoinType>(), coin_tier_value);
         } else if (tier == 5) {
             user_rewards.waitlist_coins = user_rewards.waitlist_coins + 5000;
-            emit_play_event(signer::address_of(sender), tier, string::utf8(b"5K_DEFY"), 5000);
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Waitlist Coins"), 5000);
         } else if (tier == 6) {
             user_rewards.waitlist_coins = user_rewards.waitlist_coins + 2500;
-            emit_play_event(signer::address_of(sender), tier, string::utf8(b"2.5K_DEFY"), 2500);
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Waitlist Coins"), 2500);
         } else if (tier == 7) {
             user_rewards.waitlist_coins = user_rewards.waitlist_coins + 500;
-            emit_play_event(signer::address_of(sender), tier, string::utf8(b"500_DEFY"), 500);
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Waitlist Coins"), 500);
         } else if (tier == 8) {
             user_rewards.waitlist_coins = user_rewards.waitlist_coins + 100;
-            emit_play_event(signer::address_of(sender), tier, string::utf8(b"100_DEFY"), 100);
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Waitlist Coins"), 100);
         } else if (tier == 9) {
             user_rewards.raffle_ticket = user_rewards.raffle_ticket + 10;
-            emit_play_event(signer::address_of(sender), tier, string::utf8(b"10_TICKETS"), 10);
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Raffle Ticket"), 10);
         } else if (tier == 10) {
             user_rewards.raffle_ticket = user_rewards.raffle_ticket + 5;
-            emit_play_event(signer::address_of(sender), tier, string::utf8(b"5_TICKETS"), 5);
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Raffle Ticket"), 5);
         } else if (tier == 11) {
             user_rewards.raffle_ticket = user_rewards.raffle_ticket + 2;
-            emit_play_event(signer::address_of(sender), tier, string::utf8(b"2_TICKETS"), 2);
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Raffle Ticket"), 2);
         } else {
             abort E_REWARD_TIER_OUT_OF_BOUNDS
         };
