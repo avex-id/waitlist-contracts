@@ -150,8 +150,8 @@ module mini_games::dice_roll {
 
         let total_bet_coins : u64 = 0;
         if (bet_type == 0){
+            assert!(vector::length(&bet_amounts) == 11, E_ERROR_INVALID_BET_AMOUNTS);
             for ( i in 0..11){
-                assert!(vector::length(&bet_amounts) == 11, E_ERROR_INVALID_BET_AMOUNTS);
                 let bet  = vector::borrow<u64>( &bet_amounts, i);
                 total_bet_coins = total_bet_coins + *bet;
             };

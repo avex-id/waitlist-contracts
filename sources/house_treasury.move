@@ -10,10 +10,8 @@ module mini_games::house_treasury {
 
     use mini_games::resource_account_manager as resource_account;
 
-    friend mini_games::plinko;
     friend mini_games::dice_roll;
-    friend mini_games::coin_flip;
-    friend mini_games::wheel;
+    friend mini_games::nft_lottery;
 
     // === Errors ===
     const E_CALLER_NOT_AUTHORIZED: u64 = 0;
