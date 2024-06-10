@@ -27,11 +27,7 @@ module mini_games::house_treasury {
         // House's balance which also contains the accrued winnings of the house.
         balance: Coin<CoinType>,
         // Is this treasury active for use.
-        is_active: bool,
-        // The accrued fees from games played.
-        total_collected: u64,
-        // The rewards given out by the house.
-        total_given_out: u64,
+        is_active: bool
     }
 
     // === View Functions === 
@@ -48,20 +44,6 @@ module mini_games::house_treasury {
         assert!(exists<HouseTreasury<CoinType>>(resource_account::get_address()), E_COIN_TREASURY_DOES_NOT_EXIST);
         let house_treasury = borrow_global<HouseTreasury<CoinType>>(resource_account::get_address());
         house_treasury.is_active
-    }
-
-    #[view]
-    public fun get_treasury_total_collected<CoinType>() : u64 acquires HouseTreasury {
-        assert!(exists<HouseTreasury<CoinType>>(resource_account::get_address()), E_COIN_TREASURY_DOES_NOT_EXIST);
-        let house_treasury = borrow_global<HouseTreasury<CoinType>>(resource_account::get_address());
-        house_treasury.total_collected
-    }
-
-    #[view]
-    public fun get_treasury_total_given_out<CoinType>() : u64 acquires HouseTreasury {
-        assert!(exists<HouseTreasury<CoinType>>(resource_account::get_address()), E_COIN_TREASURY_DOES_NOT_EXIST);
-        let house_treasury = borrow_global<HouseTreasury<CoinType>>(resource_account::get_address());
-        house_treasury.total_given_out
     }
 
     // === Public Entry Functions ===
@@ -106,7 +88,6 @@ module mini_games::house_treasury {
         assert!(exists<HouseTreasury<CoinType>>(resource_account::get_address()), E_COIN_TREASURY_DOES_NOT_EXIST);
         let house_treasury = borrow_global_mut<HouseTreasury<CoinType>>(resource_account::get_address());
         let amount = coin::value<CoinType>(&coins);
-        house_treasury.total_collected = house_treasury.total_collected + amount;
         coin::merge<CoinType>(&mut house_treasury.balance, coins);
     }
 
@@ -117,7 +98,6 @@ module mini_games::house_treasury {
         let house_treasury = borrow_global_mut<HouseTreasury<CoinType>>(resource_account::get_address());
         assert!(coin::value<CoinType>(&house_treasury.balance) >= amount, E_INSUFFICIENT_BALANCE);
         assert!(house_treasury.is_active, E_COIN_TREASURY_NOT_ACTIVE);
-        house_treasury.total_given_out = house_treasury.total_given_out + amount;
         coin::extract(&mut house_treasury.balance, amount)
     }
 
@@ -144,9 +124,7 @@ module mini_games::house_treasury {
         if(!exists<HouseTreasury<CoinType>>(resource_account::get_address())){
             move_to(&resource_account::get_signer(), HouseTreasury<CoinType> { 
             balance: coin::zero<CoinType>(),
-            is_active: true,
-            total_collected: 0,
-            total_given_out: 0,
+            is_active: true
         });
         }
     }
