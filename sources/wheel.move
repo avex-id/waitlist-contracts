@@ -38,21 +38,6 @@ module mini_games::wheel {
     const NUM_COIN_REWARD_TIERS: u64 = 4;
 
 
-
-    // TODO : remove this in mainnet deployment
-    #[event]
-    struct RewardEvent has drop, store {
-        reward_type: String,
-        reward_amount: u64,
-        game_address: Option<address>,
-        player: address,
-        timestamp: u64,
-    }
-    // TODO : remove this in mainnet deployment
-    struct Counter has key {
-        counter: u64
-    }
-
     struct GameConfig<phantom CoinType> has key {
         spin_fee: u64,
         active: bool,
@@ -69,10 +54,13 @@ module mini_games::wheel {
         token_collection: String,
         token_name: String,
         token_property_version: u64,
+        image_url: String
     }
 
     struct NFT_V2 has store, drop {
         token_v2: address,
+        token_name: String,
+        image_url: String
     }
 
     struct UserRewards has key, store {
@@ -95,14 +83,11 @@ module mini_games::wheel {
         timestamp: u64,
     }
 
-
-    fun init_module(admin: &signer) {
-        // Initialize the lottery manager
-        assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
-        move_to<NFTs>(&resource_account::get_signer(), NFTs {
-            nft_v1_vector: vector::empty<NFT_V1>(),
-            nft_v2_vector: vector::empty<NFT_V2>(),
-        });
+    #[event]
+    struct DefyCoinsClaimEvent has drop, store {
+        player: address,
+        amount: u64,
+        timestamp: u64,
     }
 
     entry fun add_or_change_game_config<CoinType>(sender: &signer, spin_fee: u64, coin_reward_tiers_amounts: vector<u64>) acquires GameConfig {
@@ -146,9 +131,17 @@ module mini_games::wheel {
         token_collection: String,
         token_name: String,
         token_property_version: u64,
+        image_url: String
     ) acquires NFTs {
         assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
         // assert!(check_status(), E_ERROR_LOTTERY_PAUSED);
+
+        if (!exists<NFTs>(resource_account::get_address())){
+            move_to<NFTs>(&resource_account::get_signer(), NFTs {
+                nft_v1_vector: vector::empty<NFT_V1>(),
+                nft_v2_vector: vector::empty<NFT_V2>(),
+            });
+        };
 
         let nfts_resource = borrow_global_mut<NFTs>(resource_account::get_address());
         let nft_v1 = NFT_V1 {
@@ -156,6 +149,7 @@ module mini_games::wheel {
             token_collection,
             token_name,
             token_property_version,
+            image_url
         };
 
         vector::push_back(&mut nfts_resource.nft_v1_vector, nft_v1);
@@ -171,18 +165,83 @@ module mini_games::wheel {
 
     }
 
+    public entry fun change_nft_image(
+        sender: &signer,
+        is_v1: bool,
+        index: u64,
+        image_url: String
+    ) acquires NFTs {
+        assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
+        let nfts = borrow_global_mut<NFTs>(resource_account::get_address());
+        if (is_v1){
+            let nft = vector::borrow_mut(&mut nfts.nft_v1_vector, index);
+            nft.image_url = image_url;
+        } else{
+            let nft = vector::borrow_mut(&mut nfts.nft_v2_vector, index);
+            nft.image_url = image_url;
+        }
+    }
+
+    public entry fun change_nft_name(
+        sender: &signer,
+        index: u64,
+        token_name: String
+    ) acquires NFTs {
+        assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
+        let nfts = borrow_global_mut<NFTs>(resource_account::get_address());
+        let nft = vector::borrow_mut(&mut nfts.nft_v2_vector, index);
+        nft.token_name = token_name;
+    }
+
     public entry fun add_nft_v2(
         sender: &signer,
         token_v2: Object<TokenV2>,
+        token_name: String,
+        image_url: String
     ) acquires  NFTs {
         assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
         // assert!(check_status(), E_ERROR_LOTTERY_PAUSED);
+
+        if (!exists<NFTs>(resource_account::get_address())){
+            move_to<NFTs>(&resource_account::get_signer(), NFTs {
+                nft_v1_vector: vector::empty<NFT_V1>(),
+                nft_v2_vector: vector::empty<NFT_V2>(),
+            });
+        };
+
         let nfts_resource = borrow_global_mut<NFTs>(resource_account::get_address());
         let nft_v2 = NFT_V2 {
             token_v2 : object::object_address(&token_v2),
+            token_name,
+            image_url
         };
         vector::push_back(&mut nfts_resource.nft_v2_vector, nft_v2);
         object::transfer(sender, token_v2, resource_account::get_address());
+    }
+
+    public entry fun remove_addred_nfts(
+        sender: &signer
+    ) acquires NFTs{
+        assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
+
+        let nfts = borrow_global_mut<NFTs>(resource_account::get_address());
+        for (i in 0..vector::length(&nfts.nft_v1_vector)){
+            let nft = vector::pop_back(&mut nfts.nft_v1_vector);
+            let token_id = tokenv1::create_token_id_raw(
+                nft.token_creator,
+                nft.token_collection,
+                nft.token_name,
+                nft.token_property_version
+            );
+            let token = tokenv1::withdraw_token(&resource_account::get_signer(), token_id, 1);
+            tokenv1::deposit_token(sender, token);
+        };
+
+        for (i in 0..vector::length(&nfts.nft_v2_vector)){
+            let nft = vector::pop_back(&mut nfts.nft_v2_vector);
+            let nft_object = object::address_to_object<TokenV2>(nft.token_v2);
+            object::transfer(&resource_account::get_signer(), nft_object, signer::address_of(sender));
+        };
     }
 
 
@@ -212,9 +271,6 @@ module mini_games::wheel {
 
     entry fun claim<W,X,Y,Z>(sender: &signer, num_coins: u64)
     acquires UserRewards, UserCoinRewards, GameConfig {
-        assert!(check_status<X>(), E_ERROR_LOTTERY_PAUSED);
-        assert!(check_status<Y>(), E_ERROR_LOTTERY_PAUSED);
-        assert!(check_status<Z>(), E_ERROR_LOTTERY_PAUSED);
 
         if (num_coins > 0) {
             assert!(check_status<W>(), E_ERROR_LOTTERY_PAUSED);
@@ -224,21 +280,21 @@ module mini_games::wheel {
         };
 
         if (num_coins > 1) {
-            assert!(check_status<W>(), E_ERROR_LOTTERY_PAUSED);
+            assert!(check_status<X>(), E_ERROR_LOTTERY_PAUSED);
             let user_coin_rewards = borrow_global_mut<UserCoinRewards<X>>(signer::address_of(sender));
             let coins = coin::extract_all(&mut user_coin_rewards.coin);
             coin::deposit(signer::address_of(sender), coins);
         };
 
         if (num_coins > 2) {
-            assert!(check_status<W>(), E_ERROR_LOTTERY_PAUSED);
+            assert!(check_status<Y>(), E_ERROR_LOTTERY_PAUSED);
             let user_coin_rewards = borrow_global_mut<UserCoinRewards<Y>>(signer::address_of(sender));
             let coins = coin::extract_all(&mut user_coin_rewards.coin);
             coin::deposit(signer::address_of(sender), coins);
         };
 
         if (num_coins > 3) {
-            assert!(check_status<W>(), E_ERROR_LOTTERY_PAUSED);
+            assert!(check_status<Z>(), E_ERROR_LOTTERY_PAUSED);
             let user_coin_rewards = borrow_global_mut<UserCoinRewards<Z>>(signer::address_of(sender));
             let coins = coin::extract_all(&mut user_coin_rewards.coin);
             coin::deposit(signer::address_of(sender), coins);
@@ -273,6 +329,12 @@ module mini_games::wheel {
         if (amount > 0) {
             raffle::mint_ticket(&resource_account::get_signer(), sender_address, amount);
             user_rewards.raffle_ticket = 0;
+        };
+
+        if (user_rewards.waitlist_coins > 0) {
+            emit_defy_coins_claim_event(sender_address, user_rewards.waitlist_coins);
+            user_rewards.waitlist_coins = 0;
+
         }
     }
 
@@ -285,20 +347,21 @@ module mini_games::wheel {
 
 
 
-    // TIERS	RAND NUM RANGE	0-10000
-    //#############################################
-    // 0  NFT -		    100	    0-100
-    // 1  1M GUI - 	    10	    100-110
-    // 2  100K GUI - 	500 	110-610
-    // 3  20K GUI - 	1500	610-2110
-    // 4  7.5K GUI - 	2500 	2110-4610
-    // 5  5K DEFY -	    100	    4610-4710
-    // 6  2.5K DEFY -	200 	4710-4910
-    // 7  500 DEFY - 	1000	4910-5910
-    // 8  100 DEFY - 	1500	5910-7410
-    // 9  10 TICKETS -  100 	7410-7510
-    // 10 5 TICKETS - 	1100	7510-8610
-    // 11 2 TICKETS - 	1390	8610-10000
+    // TIERS      | 10000  | 0-10000    |
+    // #################################|
+    // 1x NFT     | 200    | 0-200      |
+    // 5M GUI     | 10     | 200-210    |
+    // 1M GUI     | 90     | 210-300    |
+    // 200k GUI   | 750    | 300-1050   |
+    // 70k GUI    | 1570   | 1050-2620  |
+    // 10k DEFY   | 250    | 2620-2870  |
+    // 7.5k DEFY  | 280    | 2870-3150  |
+    // 2.5k DEFY  | 1300   | 3150-4450  |
+    // 1k DEFY    | 2000   | 4450-6450  |
+    // 10 TICKETS | 250    | 6450-6700  |
+    // 7 TICKETS  | 1300   | 6700-8000  |
+    // 4 TICKETS  | 2000   | 8000-10000 |
+
 
     fun handle_tier<CoinType>(
         sender: &signer,
@@ -323,17 +386,23 @@ module mini_games::wheel {
         let user_rewards = borrow_global_mut<UserRewards>(signer::address_of(sender));
         let user_coin_rewards = borrow_global_mut<UserCoinRewards<CoinType>>(signer::address_of(sender));
         let game_config = borrow_global_mut<GameConfig<CoinType>>(resource_account::get_address());
-
         if (tier == 0) {
             let nfts = borrow_global_mut<NFTs>(resource_account::get_address());
             if(vector::length(&nfts.nft_v1_vector) > 0){
                 let nft_v1 = vector::pop_back(&mut nfts.nft_v1_vector);
+                let reward_string = nft_v1.token_name;
+                string::append(&mut reward_string, string::utf8(b"-"));
+                string::append(&mut reward_string, nft_v1.image_url);
                 vector::push_back(&mut user_rewards.nft_v1, nft_v1);
-                emit_play_event(signer::address_of(sender), tier, string::utf8(b"NFT v1"), 1);
+                emit_play_event(signer::address_of(sender), tier, reward_string, 1);
+
             }else if (vector::length(&nfts.nft_v2_vector) > 0){
                 let nft_v2 = vector::pop_back(&mut nfts.nft_v2_vector);
+                let reward_string = nft_v2.token_name;
+                string::append(&mut reward_string, string::utf8(b"-"));
+                string::append(&mut reward_string, nft_v2.image_url);
                 vector::push_back(&mut user_rewards.nft_v2, nft_v2);
-                emit_play_event(signer::address_of(sender), tier, string::utf8(b"NFT v2"), 1);
+                emit_play_event(signer::address_of(sender), tier, reward_string, 1);
             } else{
                 abort E_NO_NFTS_LEFT_IN_CONTRACT
             }
@@ -358,25 +427,25 @@ module mini_games::wheel {
             coin::merge(&mut user_coin_rewards.coin, coins);
             emit_play_event(signer::address_of(sender), tier, type_info::type_name<CoinType>(), coin_tier_value);
         } else if (tier == 5) {
-            user_rewards.waitlist_coins = user_rewards.waitlist_coins + 5000;
+            user_rewards.waitlist_coins = user_rewards.waitlist_coins + 10000;
             emit_play_event(signer::address_of(sender), tier, string::utf8(b"Waitlist Coins"), 5000);
         } else if (tier == 6) {
-            user_rewards.waitlist_coins = user_rewards.waitlist_coins + 2500;
+            user_rewards.waitlist_coins = user_rewards.waitlist_coins + 7500;
             emit_play_event(signer::address_of(sender), tier, string::utf8(b"Waitlist Coins"), 2500);
         } else if (tier == 7) {
-            user_rewards.waitlist_coins = user_rewards.waitlist_coins + 500;
+            user_rewards.waitlist_coins = user_rewards.waitlist_coins + 2500;
             emit_play_event(signer::address_of(sender), tier, string::utf8(b"Waitlist Coins"), 500);
         } else if (tier == 8) {
-            user_rewards.waitlist_coins = user_rewards.waitlist_coins + 100;
+            user_rewards.waitlist_coins = user_rewards.waitlist_coins + 1000;
             emit_play_event(signer::address_of(sender), tier, string::utf8(b"Waitlist Coins"), 100);
         } else if (tier == 9) {
             user_rewards.raffle_ticket = user_rewards.raffle_ticket + 10;
             emit_play_event(signer::address_of(sender), tier, string::utf8(b"Raffle Ticket"), 10);
         } else if (tier == 10) {
-            user_rewards.raffle_ticket = user_rewards.raffle_ticket + 5;
+            user_rewards.raffle_ticket = user_rewards.raffle_ticket + 7;
             emit_play_event(signer::address_of(sender), tier, string::utf8(b"Raffle Ticket"), 5);
         } else if (tier == 11) {
-            user_rewards.raffle_ticket = user_rewards.raffle_ticket + 2;
+            user_rewards.raffle_ticket = user_rewards.raffle_ticket + 4;
             emit_play_event(signer::address_of(sender), tier, string::utf8(b"Raffle Ticket"), 2);
         } else {
             abort E_REWARD_TIER_OUT_OF_BOUNDS
@@ -385,43 +454,43 @@ module mini_games::wheel {
 
 
 
-    //    TIERS		    10000	0-10000
-    //#############################################
-    // 0  NFT -		    100	    0-100
-    // 1  1M GUI - 	    10	    100-110
-    // 2  100K GUI - 	500 	110-610
-    // 3  20K GUI - 	1500	610-2110
-    // 4  7.5K GUI - 	2500 	2110-4610
-    // 5  5K DEFY -	    100	    4610-4710
-    // 6  2.5K DEFY -	200 	4710-4910
-    // 7  500 DEFY - 	1000	4910-5910
-    // 8  100 DEFY - 	1500	5910-7410
-    // 9  10 TICKETS -  100 	7410-7510
-    // 10 5 TICKETS - 	1100	7510-8610
-    // 11 2 TICKETS - 	1390	8610-10000
+    // TIERS      | 10000  | 0-10000   |
+    // ################################|
+    // 1x NFT     | 200    | 0-200     |
+    // 5M GUI     | 10     | 200-210   |
+    // 1M GUI     | 90     | 210-300   |
+    // 200k GUI   | 750    | 300-1050  |
+    // 70k GUI    | 1570   | 1050-2620 |
+    // 10k DEFY   | 250    | 2620-2870 |
+    // 7.5k DEFY  | 280    | 2870-3150 |
+    // 2.5k DEFY  | 1300   | 3150-4450 |
+    // 1k DEFY    | 2000   | 4450-6450 |
+    // 10 TICKETS | 250    | 6450-6700 |
+    // 7 TICKETS  | 1300   | 6700-8000 |
+    // 4 TICKETS  | 2000   | 8000-10000 |
 
     fun allot_tier(random_num: u64): u64 {
-        if (random_num < 100) {
+        if (random_num < 200) {
             0
-        } else if (random_num < 110) {
+        } else if (random_num < 210) {
             1
-        } else if (random_num < 610) {
+        } else if (random_num < 300) {
             2
-        } else if (random_num < 2110) {
+        } else if (random_num < 1050) {
             3
-        } else if (random_num <  4610) {
+        } else if (random_num <  2620) {
             4
-        } else if (random_num < 4710) {
+        } else if (random_num < 2870) {
             5
-        } else if (random_num < 4910) {
+        } else if (random_num < 3150) {
             6
-        } else if (random_num < 5910) {
+        } else if (random_num < 4450) {
             7
-        } else if (random_num < 7410) {
+        } else if (random_num < 6450) {
             8
-        } else if (random_num < 7510) {
+        } else if (random_num < 6700) {
             9
-        } else if (random_num < 8610) {
+        } else if (random_num < 8000) {
             10
         } else if (random_num < 10000) {
             11
@@ -450,6 +519,14 @@ module mini_games::wheel {
             reward_tier,
             reward_type,
             reward_amount,
+            timestamp: timestamp::now_seconds(),
+        });
+    }
+
+    fun emit_defy_coins_claim_event(player: address, amount: u64) {
+        0x1::event::emit(DefyCoinsClaimEvent {
+            player,
+            amount,
             timestamp: timestamp::now_seconds(),
         });
     }
