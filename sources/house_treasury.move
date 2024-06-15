@@ -12,6 +12,7 @@ module mini_games::house_treasury {
 
     friend mini_games::dice_roll;
     friend mini_games::nft_lottery;
+    friend mini_games::wheel;
 
     // === Errors ===
     const E_CALLER_NOT_AUTHORIZED: u64 = 0;
@@ -124,9 +125,7 @@ module mini_games::house_treasury {
         if(!exists<HouseTreasury<CoinType>>(resource_account::get_address())){
             move_to(&resource_account::get_signer(), HouseTreasury<CoinType> { 
             balance: coin::zero<CoinType>(),
-            is_active: true,
-            total_collected: 0,
-            total_given_out: 0,
+            is_active: true
         });
         }
     }
