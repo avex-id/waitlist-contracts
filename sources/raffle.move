@@ -6,7 +6,6 @@ module mini_games::raffle {
     use aptos_std::smart_vector::{Self, SmartVector};
     use aptos_std::object::{Self, Object, DeleteRef, ExtendRef};
 
-
     use aptos_framework::aptos_account;
     use aptos_framework::coin::{Self, Coin};
     use aptos_framework::table::{Self, Table};
@@ -72,7 +71,7 @@ module mini_games::raffle {
         participants: SmartVector<address>,
         active: bool,
     }
-    
+
     #[resource_group_member(group = aptos_framework::object::ObjectGroup)]
     struct NFTV2Raffle has key, store {
         token_v2: Object<TokenV2>,
@@ -115,7 +114,7 @@ module mini_games::raffle {
 
     // ======================== Entry functions ========================
 
-    public entry fun add_coin_raffle<X>(admin: &signer, coin_amount: u64) 
+    public entry fun add_coin_raffle<X>(admin: &signer, coin_amount: u64)
     acquires RaffleManager, CoinRaffleManager {
 
         assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
@@ -146,7 +145,7 @@ module mini_games::raffle {
                 active: false,
             });
             coin_raffle_manager.coin_raffle_count = coin_raffle_count + 1;
-    
+
         }
     }
 
@@ -161,7 +160,7 @@ module mini_games::raffle {
     // }
 
     public entry fun add_nft_raffle(
-        admin: &signer, 
+        admin: &signer,
         token_creator: address,
         token_collection: String,
         token_name: String,
@@ -169,7 +168,7 @@ module mini_games::raffle {
     ) acquires RaffleManager, NftRaffleManager{
         assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
         assert!(check_status(), E_ERROR_RAFFLE_PAUSED);
-        
+
         let raffle_manager = borrow_global_mut<NftRaffleManager>(resource_account::get_address());
         let nft_v1_raffle_count = raffle_manager.nft_v1_raffle_count;
         let token_id = tokenv1::create_token_id_raw(token_creator, token_collection, token_name, token_property_version);
@@ -192,7 +191,7 @@ module mini_games::raffle {
         raffle_manager.nft_v1_raffle_count = nft_v1_raffle_count + 1;
     }
 
-    public entry fun add_nft_v2_raffle(admin: &signer, nft: Object<TokenV2>) 
+    public entry fun add_nft_v2_raffle(admin: &signer, nft: Object<TokenV2>)
     acquires RaffleManager, NftRaffleManager {
         assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
         assert!(check_status(), E_ERROR_RAFFLE_PAUSED);
@@ -278,8 +277,7 @@ module mini_games::raffle {
             smart_vector::push_back(participants, signer::address_of(sender));
         };
 
-        
-    } 
+    }
 
     #[randomness]
     entry fun pick_winner_coin_raffle_v_2<X>(admin: &signer, raffle_id: u64, num_winners: u64)
@@ -287,7 +285,7 @@ module mini_games::raffle {
         assert!(signer::address_of(admin) == @mini_games, E_ERROR_UNAUTHORIZED);
         assert!(check_status(), E_ERROR_RAFFLE_PAUSED);
         assert!(num_winners > 0, E_ERROR_INVALID_NUM_WINNERS);
-        
+
         let coin_raffle_manager = borrow_global_mut<CoinRaffleManager<X>>(resource_account::get_address());
         let coin_raffle = table::borrow_mut(&mut coin_raffle_manager.coin_raffles, raffle_id);
         let num_coins = coin::value(&coin_raffle.coin);
@@ -296,7 +294,7 @@ module mini_games::raffle {
         assert!(!coin_raffle.active, E_RAFFLE_NOT_ENDED);
 
         let i = 0;
-        
+
         while( i < num_winners ) {
             i = i + 1;
             let num_participants = smart_vector::length(&coin_raffle.participants);
@@ -398,7 +396,7 @@ module mini_games::raffle {
         } else {
             abort E_ERROR_INVALID_TYPE
         }
-    } 
+    }
 
     public entry fun toggle_global_state(sender: &signer) acquires RaffleManager {
         assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
@@ -502,9 +500,6 @@ module mini_games::raffle {
     }
 
 
-    fun rand_u64_range(i: u64): u64 {
-        abort E_DEPRICIATED
-    }
 
     fun bytes_to_u64(bytes: vector<u8>): u64 {
         let value = 0u64;
