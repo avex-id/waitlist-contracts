@@ -1,6 +1,5 @@
 module mini_games::wheel {
 
-    use std::option::{Option};
     use std::signer;
     use std::string;
     use std::string::{String};
@@ -219,30 +218,30 @@ module mini_games::wheel {
         object::transfer(sender, token_v2, resource_account::get_address());
     }
 
-    public entry fun remove_addred_nfts(
-        sender: &signer
-    ) acquires NFTs{
-        assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
-
-        let nfts = borrow_global_mut<NFTs>(resource_account::get_address());
-        for (i in 0..vector::length(&nfts.nft_v1_vector)){
-            let nft = vector::pop_back(&mut nfts.nft_v1_vector);
-            let token_id = tokenv1::create_token_id_raw(
-                nft.token_creator,
-                nft.token_collection,
-                nft.token_name,
-                nft.token_property_version
-            );
-            let token = tokenv1::withdraw_token(&resource_account::get_signer(), token_id, 1);
-            tokenv1::deposit_token(sender, token);
-        };
-
-        for (i in 0..vector::length(&nfts.nft_v2_vector)){
-            let nft = vector::pop_back(&mut nfts.nft_v2_vector);
-            let nft_object = object::address_to_object<TokenV2>(nft.token_v2);
-            object::transfer(&resource_account::get_signer(), nft_object, signer::address_of(sender));
-        };
-    }
+    // public entry fun remove_addred_nfts(
+    //     sender: &signer
+    // ) acquires NFTs{
+    //     assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
+    //
+    //     let nfts = borrow_global_mut<NFTs>(resource_account::get_address());
+    //     for (i in 0..vector::length(&nfts.nft_v1_vector)){
+    //         let nft = vector::pop_back(&mut nfts.nft_v1_vector);
+    //         let token_id = tokenv1::create_token_id_raw(
+    //             nft.token_creator,
+    //             nft.token_collection,
+    //             nft.token_name,
+    //             nft.token_property_version
+    //         );
+    //         let token = tokenv1::withdraw_token(&resource_account::get_signer(), token_id, 1);
+    //         tokenv1::deposit_token(sender, token);
+    //     };
+    //
+    //     for (i in 0..vector::length(&nfts.nft_v2_vector)){
+    //         let nft = vector::pop_back(&mut nfts.nft_v2_vector);
+    //         let nft_object = object::address_to_object<TokenV2>(nft.token_v2);
+    //         object::transfer(&resource_account::get_signer(), nft_object, signer::address_of(sender));
+    //     };
+    // }
 
 
     #[randomness]
@@ -301,40 +300,39 @@ module mini_games::wheel {
         };
 
         let sender_address = signer::address_of(sender);
-        let user_rewards = borrow_global_mut<UserRewards>(sender_address);
+        if (exists<UserRewards>(sender_address)) {
+            let user_rewards = borrow_global_mut<UserRewards>(sender_address);
 
-        for (i in 0..vector::length(&user_rewards.nft_v1)){
-            let nft_details = vector::pop_back(&mut user_rewards.nft_v1);
+            for (i in 0..vector::length(&user_rewards.nft_v1)) {
+                let nft_details = vector::pop_back(&mut user_rewards.nft_v1);
 
-            let token_id = tokenv1::create_token_id_raw(
-                nft_details.token_creator,
-                nft_details.token_collection,
-                nft_details.token_name,
-                nft_details.token_property_version
+                let token_id = tokenv1::create_token_id_raw(
+                    nft_details.token_creator,
+                    nft_details.token_collection,
+                    nft_details.token_name,
+                    nft_details.token_property_version
                 );
-            let token = tokenv1::withdraw_token(&resource_account::get_signer(), token_id, 1);
-            tokenv1::deposit_token(sender, token);
+                let token = tokenv1::withdraw_token(&resource_account::get_signer(), token_id, 1);
+                tokenv1::deposit_token(sender, token);
+            };
 
+            for (i in 0..vector::length(&user_rewards.nft_v2)) {
+                let nft_details = vector::pop_back(&mut user_rewards.nft_v2);
+                let nft_object = object::address_to_object<TokenV2>(nft_details.token_v2);
+                object::transfer(&resource_account::get_signer(), nft_object, signer::address_of(sender));
+            };
 
-        };
+            // Claim raffle tickets if any
+            let amount = user_rewards.raffle_ticket;
+            if (amount > 0) {
+                raffle::mint_ticket(&resource_account::get_signer(), sender_address, amount);
+                user_rewards.raffle_ticket = 0;
+            };
 
-        for (i in 0..vector::length(&user_rewards.nft_v2)){
-            let nft_details = vector::pop_back(&mut user_rewards.nft_v2);
-            let nft_object = object::address_to_object<TokenV2>(nft_details.token_v2);
-            object::transfer(&resource_account::get_signer(), nft_object, signer::address_of(sender));
-        };
-
-        // Claim raffle tickets if any
-        let amount = user_rewards.raffle_ticket;
-        if (amount > 0) {
-            raffle::mint_ticket(&resource_account::get_signer(), sender_address, amount);
-            user_rewards.raffle_ticket = 0;
-        };
-
-        if (user_rewards.waitlist_coins > 0) {
-            emit_defy_coins_claim_event(sender_address, user_rewards.waitlist_coins);
-            user_rewards.waitlist_coins = 0;
-
+            if (user_rewards.waitlist_coins > 0) {
+                emit_defy_coins_claim_event(sender_address, user_rewards.waitlist_coins);
+                user_rewards.waitlist_coins = 0;
+            }
         }
     }
 

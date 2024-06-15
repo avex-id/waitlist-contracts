@@ -88,7 +88,6 @@ module mini_games::house_treasury {
     ) acquires HouseTreasury {
         assert!(exists<HouseTreasury<CoinType>>(resource_account::get_address()), E_COIN_TREASURY_DOES_NOT_EXIST);
         let house_treasury = borrow_global_mut<HouseTreasury<CoinType>>(resource_account::get_address());
-        let amount = coin::value<CoinType>(&coins);
         coin::merge<CoinType>(&mut house_treasury.balance, coins);
     }
 
