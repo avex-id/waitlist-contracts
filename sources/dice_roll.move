@@ -32,6 +32,8 @@ module mini_games::dice_roll {
     const E_GAME_FOR_COIN_TYPE_DOES_ALREADY_EXIST: u64 = 9;
     /// allowed bet types are : 0, 1
     const E_ERROR_INVALID_BET_TYPE: u64 = 10;
+    /// the number of bets is invalid, it should be between 1 and 4
+    const E_ERROR_INVALID_NUM_BETS: u64 = 11;
 
 
     const EVEN_ODD_MULTIPLIER : u64 = 150;
@@ -58,7 +60,6 @@ module mini_games::dice_roll {
         active: bool,
         max_bet_amount: u64,
         min_bet_amount: u64,
-        counter: u64,
         defy_coins_exchange_rate: u64,
     }
 
@@ -80,7 +81,6 @@ module mini_games::dice_roll {
             active: true,
             max_bet_amount,
             min_bet_amount,
-            counter: 0,
             defy_coins_exchange_rate
         });
     }
@@ -124,7 +124,7 @@ module mini_games::dice_roll {
     #[randomness]
     entry fun play_multiple<CoinType>(
         sender: &signer,
-        bet_type: u64,
+        bet_type: u64, // 0 - sum, 1 - even/odd
         bet_amounts: vector<u64>,
         side: bool, // even - true, odd - false
         bet_even_odd: u64,
@@ -149,29 +149,34 @@ module mini_games::dice_roll {
         assert!(game_manager.active, E_GAME_PAUSED);
 
         let total_bet_coins : u64 = 0;
+        let num_bets = 0;
         if (bet_type == 0){
+            assert!(vector::length(&bet_amounts) == 11, E_ERROR_INVALID_BET_AMOUNTS);
             for ( i in 0..11){
-                assert!(vector::length(&bet_amounts) == 11, E_ERROR_INVALID_BET_AMOUNTS);
                 let bet  = vector::borrow<u64>( &bet_amounts, i);
-                total_bet_coins = total_bet_coins + *bet;
+                if (*bet > 0){
+                    total_bet_coins = total_bet_coins + *bet;
+                    num_bets = num_bets + 1;
+                };
             };
         } else if (bet_type == 1){
             total_bet_coins  = bet_even_odd;
+            num_bets = 1;
         } else {
             abort E_ERROR_INVALID_BET_TYPE
         };
 
 
-
+        assert!(num_bets > 0, E_ERROR_INVALID_NUM_BETS);
+        assert!(num_bets < 5, E_ERROR_INVALID_NUM_BETS);
         assert!(total_bet_coins <= game_manager.max_bet_amount, E_ERROR_BET_AMOUNT_EXCEEDS_MAX);
         assert!(total_bet_coins >= game_manager.min_bet_amount, E_ERROR_BET_AMOUNT_BELOW_MIN);
-        
+
         let bet_coins = coin::withdraw<CoinType>(sender, total_bet_coins);
         house_treasury::merge_coins(bet_coins);
 
         let dice_one_value = randomness::u64_range(1, 7);
         let dice_two_value = randomness::u64_range(1, 7);
-        game_manager.counter = game_manager.counter + 2;
 
         let sum = dice_one_value + dice_two_value;
 
@@ -179,9 +184,9 @@ module mini_games::dice_roll {
 
     }
 
-    entry fun claim<X, Y, Z, A, B>(sender: &signer, num_coins : u64) 
+    entry fun claim<X, Y, Z, A, B>(sender: &signer, num_coins : u64)
     acquires PlayerRewards {
-        
+
         if (num_coins >= 1){
             assert!(exists<PlayerRewards<X>>(signer::address_of(sender)), E_ERROR_INVALID_COIN);
             let player_rewards = borrow_global_mut<PlayerRewards<X>>(signer::address_of(sender));
@@ -231,7 +236,7 @@ module mini_games::dice_roll {
 
 
     fun handle_roll<CoinType>(
-        sender: &signer, 
+        sender: &signer,
         dice_one_value: u64,
         dice_two_value: u64,
         dice_sum: u64,
@@ -278,7 +283,7 @@ module mini_games::dice_roll {
         dice_sum : u64
     ): u64{
         if (dice_sum == 2){
-           1200
+            1200
         } else if (dice_sum == 3){
             1000
         } else if (dice_sum == 4){
@@ -315,6 +320,8 @@ module mini_games::dice_roll {
             coin::merge(&mut player_rewards.rewards_balance, coin);
             0
         } else{
+            let coins =  house_treasury::extract_coins<CoinType>(1);
+            coin::merge(&mut player_rewards.rewards_balance, coins);
             total_bet_coins / defy_coins_exchange_rate
         };
         defy_coins_won
@@ -353,5 +360,5 @@ module mini_games::dice_roll {
     public fun see_resource_address(): address {
         resource_account::get_address()
     }
-  
+
 }
