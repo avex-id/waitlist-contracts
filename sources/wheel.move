@@ -426,25 +426,25 @@ module mini_games::wheel {
             emit_play_event(signer::address_of(sender), tier, type_info::type_name<CoinType>(), coin_tier_value);
         } else if (tier == 5) {
             user_rewards.waitlist_coins = user_rewards.waitlist_coins + 10000;
-            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Waitlist Coins"), 5000);
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Waitlist Coins"), 10000);
         } else if (tier == 6) {
             user_rewards.waitlist_coins = user_rewards.waitlist_coins + 7500;
-            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Waitlist Coins"), 2500);
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Waitlist Coins"), 7500);
         } else if (tier == 7) {
             user_rewards.waitlist_coins = user_rewards.waitlist_coins + 2500;
-            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Waitlist Coins"), 500);
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Waitlist Coins"), 2500);
         } else if (tier == 8) {
             user_rewards.waitlist_coins = user_rewards.waitlist_coins + 1000;
-            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Waitlist Coins"), 100);
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Waitlist Coins"), 1000);
         } else if (tier == 9) {
             user_rewards.raffle_ticket = user_rewards.raffle_ticket + 10;
             emit_play_event(signer::address_of(sender), tier, string::utf8(b"Raffle Ticket"), 10);
         } else if (tier == 10) {
             user_rewards.raffle_ticket = user_rewards.raffle_ticket + 7;
-            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Raffle Ticket"), 5);
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Raffle Ticket"), 7);
         } else if (tier == 11) {
             user_rewards.raffle_ticket = user_rewards.raffle_ticket + 4;
-            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Raffle Ticket"), 2);
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Raffle Ticket"), 4);
         } else {
             abort E_REWARD_TIER_OUT_OF_BOUNDS
         };
