@@ -223,7 +223,7 @@ module mini_games::raffle {
     public entry fun mint_ticket(admin: &signer, to: address, amount: u64)
     acquires RaffleManager {
         assert!(check_status(), E_ERROR_RAFFLE_PAUSED);
-        assert!(amount <= 100, E_EXCESSIVE_TICKETS);
+        assert!(amount <= 1000, E_EXCESSIVE_TICKETS);
         assert!(caller_acl(signer::address_of(admin)), E_ERROR_UNAUTHORIZED);
 
         let resource_address = resource_account::get_address();

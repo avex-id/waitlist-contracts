@@ -171,7 +171,7 @@ module mini_games::dice_roll {
         assert!(num_bets < 5, E_ERROR_INVALID_NUM_BETS);
         assert!(total_bet_coins <= game_manager.max_bet_amount, E_ERROR_BET_AMOUNT_EXCEEDS_MAX);
         assert!(total_bet_coins >= game_manager.min_bet_amount, E_ERROR_BET_AMOUNT_BELOW_MIN);
-        
+
         let bet_coins = coin::withdraw<CoinType>(sender, total_bet_coins);
         house_treasury::merge_coins(bet_coins);
 
@@ -184,9 +184,9 @@ module mini_games::dice_roll {
 
     }
 
-    entry fun claim<X, Y, Z, A, B>(sender: &signer, num_coins : u64) 
+    entry fun claim<X, Y, Z, A, B>(sender: &signer, num_coins : u64)
     acquires PlayerRewards {
-        
+
         if (num_coins >= 1){
             assert!(exists<PlayerRewards<X>>(signer::address_of(sender)), E_ERROR_INVALID_COIN);
             let player_rewards = borrow_global_mut<PlayerRewards<X>>(signer::address_of(sender));
@@ -236,7 +236,7 @@ module mini_games::dice_roll {
 
 
     fun handle_roll<CoinType>(
-        sender: &signer, 
+        sender: &signer,
         dice_one_value: u64,
         dice_two_value: u64,
         dice_sum: u64,
@@ -283,7 +283,7 @@ module mini_games::dice_roll {
         dice_sum : u64
     ): u64{
         if (dice_sum == 2){
-           1200
+            1200
         } else if (dice_sum == 3){
             1000
         } else if (dice_sum == 4){
@@ -360,5 +360,5 @@ module mini_games::dice_roll {
     public fun see_resource_address(): address {
         resource_account::get_address()
     }
-  
+
 }

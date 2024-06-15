@@ -453,9 +453,6 @@ module mini_games::nft_lottery {
     //     lottery_manager.nft_v2 = vector::empty<Object<NFTV2Store>>();
     // }
 
-    fun rand_u64_range(_i: u64): u64 {
-        abort E_DEPRICIATED
-    }
 
     fun check_percentage_bounds(percentage: u64): bool {
         let allowed_percentages: vector<u64> = vector[1, 2, 3, 4, 5];
