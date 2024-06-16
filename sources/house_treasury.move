@@ -13,6 +13,7 @@ module mini_games::house_treasury {
     friend mini_games::dice_roll;
     friend mini_games::nft_lottery;
     friend mini_games::wheel;
+    friend mini_games::coin_flip;
 
     // === Errors ===
     const E_CALLER_NOT_AUTHORIZED: u64 = 0;
