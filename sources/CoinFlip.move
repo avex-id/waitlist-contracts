@@ -209,16 +209,15 @@ module mini_games::coin_flip {
             house_treasury::merge_coins<Tails>(bet_coins);
 
             let coin_flip_value = get_coin_flip_value_with_house_edge(selected_coin_face, game_manager.house_edge_numerator, game_manager.house_edge_denominator);
-
             handle_roll<Heads, Tails>(sender, coin_flip_value, selected_coin_face, bet_amount);
 
         } else {
-            assert!(false, E_ERROR_INVALID_BET_TYPE);
+            abort E_ERROR_INVALID_BET_TYPE;
         };
     }
 
     entry fun claim<X, Y, Z, A, B>(sender: &signer, num_coins : u64)
-    acquires PlayerRewards {
+    acquires PlayerRewards , PlayerDefyCoinsRewards{
 
         if (num_coins >= 1){
             assert!(exists<PlayerRewards<X>>(signer::address_of(sender)), E_ERROR_INVALID_COIN);
@@ -265,6 +264,14 @@ module mini_games::coin_flip {
             let coins = coin::extract(reward_coins, value);
             aptos_account::deposit_coins(signer::address_of(sender), coins);
         };
+
+        if(exists<PlayerDefyCoinsRewards>(signer::address_of(sender))){
+            let defy_coins_rewards = borrow_global_mut<PlayerDefyCoinsRewards>(signer::address_of(sender));
+            if (defy_coins_rewards.rewards_balance > 0){
+                emit_defy_coins_claim_event(signer::address_of(sender), defy_coins_rewards.rewards_balance);
+                defy_coins_rewards.rewards_balance = 0;
+            };
+        }
     }
 
 
@@ -294,7 +301,6 @@ module mini_games::coin_flip {
         };
 
         let game_manager = borrow_global_mut<GameManager<Heads, Tails>>(resource_account::get_address());
-
 
         if ( selected_coin_face == coin_flip_value && selected_coin_face == HEADS){
             let player_rewards = borrow_global_mut<PlayerRewards<Heads>>(signer::address_of(sender));
@@ -335,7 +341,7 @@ module mini_games::coin_flip {
     //  range_with_house_edge = 10/2 = 5
     //  if random num <= 45 then HEADS
     //  else if  random number >= 56 then TAILS
-    //  else user always loses
+    //  else user always loses, hence 10% edge for the house
     fun get_coin_flip_value_with_house_edge(
         selected_coin_face: u64,
         house_edge_numerator: u64,
@@ -386,6 +392,16 @@ module mini_games::coin_flip {
             bet_amount,
             amount_won,
             defy_coins_won
+        });
+    }
+
+    fun emit_defy_coins_claim_event(
+        player : address,
+        defy_coins_claimed: u64
+    ){
+        0x1::event::emit(DefyCoinsClaimEvent{
+            player,
+            defy_coins_won: defy_coins_claimed
         });
     }
 
