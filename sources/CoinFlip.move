@@ -1,7 +1,6 @@
 module mini_games::coin_flip {
 
     use std::signer;
-    use std::vector;
     use std::string::{String};
     use aptos_std::type_info;
 
@@ -15,28 +14,27 @@ module mini_games::coin_flip {
 
     /// you are not authorized to call this function
     const E_ERROR_UNAUTHORIZED: u64 = 1;
-    /// sum of the dice is out of bounds
-    const E_DICE_SUM_OUT_OF_BOUNDS: u64 = 2;
     /// the game for the coin type does not exist
-    const E_GAME_FOR_COIN_TYPE_DOES_NOT_EXIST: u64 = 3;
+    const E_GAME_FOR_COIN_TYPE_DOES_NOT_EXIST: u64 = 2;
     /// the game is paused
-    const E_GAME_PAUSED: u64 = 4;
-    /// the bet amount is invalid
-    const E_ERROR_INVALID_BET_AMOUNTS: u64 = 5;
+    const E_GAME_PAUSED: u64 = 3;
     /// the bet amount exceeds the max bet amount
-    const E_ERROR_BET_AMOUNT_EXCEEDS_MAX: u64 = 6;
+    const E_ERROR_BET_AMOUNT_EXCEEDS_MAX: u64 = 4;
     /// the bet amount is below the min bet amount
-    const E_ERROR_BET_AMOUNT_BELOW_MIN: u64 = 7;
+    const E_ERROR_BET_AMOUNT_BELOW_MIN: u64 = 5;
     /// the coin type is invalid
-    const E_ERROR_INVALID_COIN: u64 = 8;
+    const E_ERROR_INVALID_COIN: u64 = 6;
     /// the game for the coin type already exists
-    const E_GAME_FOR_COIN_TYPE_DOES_ALREADY_EXIST: u64 = 9;
+    const E_GAME_FOR_COIN_TYPE_DOES_ALREADY_EXIST: u64 = 7;
     /// allowed bet types are : 0, 1
-    const E_ERROR_INVALID_BET_TYPE: u64 = 10;
+    const E_ERROR_INVALID_BET_TYPE: u64 = 8;
+    /// the number of plays should be less than 8 and greater than 0
+    const E_ERROR_NUM_PLAYS_EXCEEDS_BOUNDS: u64 = 9;
 
 
     const HEADS : u64 = 0;
     const TAILS : u64 = 1;
+    const MAX_PLAY_COUNT : u64 = 8;
 
     struct GameManager<phantom Heads, phantom Tails> has key {
         active: bool,
@@ -168,6 +166,8 @@ module mini_games::coin_flip {
         bet_amount: u64,
         num_plays: u64
     ) acquires GameManager, PlayerRewards, PlayerDefyCoinsRewards {
+        assert!(num_plays <= MAX_PLAY_COUNT, E_ERROR_NUM_PLAYS_EXCEEDS_BOUNDS);
+        assert!(num_plays >= 1, E_ERROR_NUM_PLAYS_EXCEEDS_BOUNDS);
         for (i in 0..num_plays) {
             play<Heads, Tails>(sender, selected_coin_face, bet_amount);
         }
@@ -300,6 +300,7 @@ module mini_games::coin_flip {
             emit_play_event(type_info::type_name<Heads>(), type_info::type_name<Tails>(), game_manager.win_multiplier_numerator, game_manager.win_multiplier_denominator, signer::address_of(sender), true, bet_amount, amount_won, selected_coin_face, coin_flip_value, 0);
         } else if (selected_coin_face == coin_flip_value && selected_coin_face == TAILS){
             let player_rewards = borrow_global_mut<PlayerRewards<Tails>>(signer::address_of(sender));
+
             let amount_won = (bet_amount * game_manager.win_multiplier_numerator) / game_manager.win_multiplier_denominator;
             let coin = house_treasury::extract_coins<Tails>(amount_won);
             coin::merge(&mut player_rewards.rewards_balance, coin);
@@ -307,11 +308,11 @@ module mini_games::coin_flip {
             emit_play_event(type_info::type_name<Heads>(), type_info::type_name<Tails>(), game_manager.win_multiplier_numerator, game_manager.win_multiplier_denominator, signer::address_of(sender), true, bet_amount, amount_won, selected_coin_face, coin_flip_value, 0);
         } else {
             let player_rewards = borrow_global_mut<PlayerDefyCoinsRewards>(signer::address_of(sender));
-            let defy_coins_won  = if (coin_flip_value == HEADS){
+            let defy_coins_won  = if (selected_coin_face == HEADS){
                 let defy_coins_won = (bet_amount / game_manager.defy_coins_exchange_rate_heads);
                 player_rewards.rewards_balance = player_rewards.rewards_balance + defy_coins_won;
                 defy_coins_won
-            } else if (coin_flip_value == TAILS){
+            } else if (selected_coin_face == TAILS){
                 let defy_coins_won = (bet_amount / game_manager.defy_coins_exchange_rate_tails);
                 player_rewards.rewards_balance = player_rewards.rewards_balance + defy_coins_won;
                 defy_coins_won
