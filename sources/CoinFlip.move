@@ -44,6 +44,8 @@ module mini_games::coin_flip {
         min_bet_amount_tails: u64,
         win_multiplier_numerator: u64,
         win_multiplier_denominator: u64,
+        house_edge_numerator: u64,
+        house_edge_denominator: u64,
         defy_coins_exchange_rate_heads: u64,
         defy_coins_exchange_rate_tails: u64
     }
@@ -88,6 +90,8 @@ module mini_games::coin_flip {
         min_bet_amount_tails: u64,
         win_multiplier_numerator: u64,
         win_multiplier_denominator: u64,
+        house_edge_numerator: u64,
+        house_edge_denominator: u64,
         defy_coins_exchange_rate_heads: u64,
         defy_coins_exchange_rate_tails: u64
     ) {
@@ -101,6 +105,8 @@ module mini_games::coin_flip {
             min_bet_amount_tails,
             win_multiplier_numerator,
             win_multiplier_denominator,
+            house_edge_numerator,
+            house_edge_denominator,
             defy_coins_exchange_rate_heads,
             defy_coins_exchange_rate_tails
         });
@@ -191,8 +197,8 @@ module mini_games::coin_flip {
             let bet_coins = coin::withdraw<Heads>(sender, bet_amount);
             house_treasury::merge_coins<Heads>(bet_coins);
 
-            let coin_flip_value = randomness::u64_range(0, 2);
-
+            // let coin_flip_value = randomness::u64_range(0, 2);
+            let coin_flip_value = get_coin_flip_value_with_house_edge(selected_coin_face, game_manager.house_edge_numerator, game_manager.house_edge_denominator);
             handle_roll<Heads, Tails>(sender, coin_flip_value, selected_coin_face, bet_amount);
 
         } else if (selected_coin_face == TAILS){
@@ -202,7 +208,7 @@ module mini_games::coin_flip {
             let bet_coins = coin::withdraw<Tails>(sender, bet_amount);
             house_treasury::merge_coins<Tails>(bet_coins);
 
-            let coin_flip_value = randomness::u64_range(0, 2);
+            let coin_flip_value = get_coin_flip_value_with_house_edge(selected_coin_face, game_manager.house_edge_numerator, game_manager.house_edge_denominator);
 
             handle_roll<Heads, Tails>(sender, coin_flip_value, selected_coin_face, bet_amount);
 
@@ -323,6 +329,36 @@ module mini_games::coin_flip {
         };
     }
 
+    //  for house edge of 10%
+    //  numerator = 100, denominator = 10
+    //  range_with_house_edge  = 100/10 = 10
+    //  range_with_house_edge = 10/2 = 5
+    //  if random num <= 45 then HEADS
+    //  else if  random number >= 56 then TAILS
+    //  else user always loses
+    fun get_coin_flip_value_with_house_edge(
+        selected_coin_face: u64,
+        house_edge_numerator: u64,
+        house_edge_denominator: u64
+    ): u64 {
+        let random_number = randomness::u64_range(1,101);
+        let range_with_house_edge = house_edge_numerator / (house_edge_denominator);
+        range_with_house_edge = range_with_house_edge / 2;
+        let coin_side = if (random_number <= (50-range_with_house_edge)){
+            HEADS
+        } else if (random_number >= (51+range_with_house_edge)){
+            TAILS
+        } else{
+            if (selected_coin_face == HEADS){
+                TAILS
+            } else if (selected_coin_face == TAILS){
+                HEADS
+            } else {
+                abort E_ERROR_INVALID_BET_TYPE;
+            }
+        };
+        coin_side
+    }
 
 
     fun emit_play_event(
