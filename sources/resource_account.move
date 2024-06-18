@@ -11,7 +11,7 @@ module mini_games::resource_account_manager {
     friend mini_games::house_treasury;
     friend mini_games::wheel;
     friend mini_games::coin_flip;
-    
+    friend mini_games::plinko;
 
 
     struct SignerCapabilityStore has key {
