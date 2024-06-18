@@ -17,6 +17,7 @@ module mini_games::nft_lottery {
 
     use mini_games::resource_account_manager as resource_account;
     use mini_games::raffle;
+    use mini_games::house_treasury;
 
     /// you are not authorized to call this function
     const E_ERROR_UNAUTHORIZED: u64 = 1;
@@ -384,8 +385,7 @@ module mini_games::nft_lottery {
 
         // Claim v1 NFTs if any
         vector::for_each<Object<NFTStore>>(player_rewards.nft, |nft| {
-
-            let NFTStore { token, token_floor_price : _token_floor_price} = move_from<NFTStore>(object::object_address(&nft));
+            let NFTStore { token, token_floor_price } = move_from<NFTStore>(object::object_address(&nft));
             tokenv1::deposit_token(sender, token);
             object::transfer(&resource_account::get_signer(), nft, sender_address);
         });
@@ -395,8 +395,7 @@ module mini_games::nft_lottery {
         vector::for_each<Object<NFTV2Store>>(player_rewards.nft_v2, |nft_v2| {
             let NFTV2Store {
                 token_v2,
-
-                token_floor_price: _token_floor_price, 
+                token_floor_price,
                 extend_ref,
                 delete_ref
             } = move_from<NFTV2Store>(object::object_address(&nft_v2));
@@ -511,9 +510,8 @@ module mini_games::nft_lottery {
             }
         } else if (tier == 1) {
             // 2x apt_balance amount
-            let apt = &mut borrow_global_mut<LotteryManager>(resource_account::get_address()).apt_balance;
             let coin_amount = 2 * fee_amount;
-            let coin = coin::extract(apt, coin_amount);
+            let coin = house_treasury::extract_coins<AptosCoin>(coin_amount);
             coin::merge(&mut player_rewards.apt, coin);
 
             let reward_type = string::utf8(b"2x APT REWARD");
@@ -525,9 +523,8 @@ module mini_games::nft_lottery {
             emit_event(string::utf8(b"Free Spin"), 1, reward_address, signer::address_of(sender));
         } else if (tier == 3) {
             // 50% of the apt_balance amount
-            let apt = &mut borrow_global_mut<LotteryManager>(resource_account::get_address()).apt_balance;
             let coin_amount = fee_amount / 2;
-            let coin = coin::extract(apt, coin_amount);
+            let coin = house_treasury::extract_coins<AptosCoin>(coin_amount);
             coin::merge(&mut player_rewards.apt, coin);
 
             let reward_type = string::utf8(b"50% APT CASHBACK");
@@ -535,9 +532,8 @@ module mini_games::nft_lottery {
             emit_event(reward_type, coin_amount, reward_address, signer::address_of(sender));
         } else if (tier == 4) {
             // 40% of the apt_balance amount
-            let apt = &mut borrow_global_mut<LotteryManager>(resource_account::get_address()).apt_balance;
             let coin_amount = (fee_amount * 4) / 10;
-            let coin = coin::extract(apt, coin_amount);
+            let coin = house_treasury::extract_coins<AptosCoin>(coin_amount);
             coin::merge(&mut player_rewards.apt, coin);
 
             let reward_type = string::utf8(b"40% APT CASHBACK");
@@ -545,9 +541,8 @@ module mini_games::nft_lottery {
             emit_event(reward_type, coin_amount, reward_address, signer::address_of(sender));
         } else if (tier == 5) {
             // 30% of the apt_balance amount
-            let apt = &mut borrow_global_mut<LotteryManager>(resource_account::get_address()).apt_balance;
             let coin_amount = (fee_amount * 3) / 10;
-            let coin = coin::extract(apt, coin_amount);
+            let coin = house_treasury::extract_coins<AptosCoin>(coin_amount);
             coin::merge(&mut player_rewards.apt, coin);
 
             let reward_type = string::utf8(b"30% APT CASHBACK");
