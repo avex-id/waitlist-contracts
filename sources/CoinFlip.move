@@ -355,13 +355,15 @@ module mini_games::coin_flip {
         } else if (random_number >= (51+range_with_house_edge)){
             TAILS
         } else{
-            if (selected_coin_face == HEADS){
+            let result = if (selected_coin_face == HEADS){
                 TAILS
             } else if (selected_coin_face == TAILS){
                 HEADS
             } else {
-                abort E_ERROR_INVALID_BET_TYPE;
-            }
+                assert!(false, E_ERROR_INVALID_BET_TYPE);
+                3
+            };
+            result
         };
         coin_side
     }
