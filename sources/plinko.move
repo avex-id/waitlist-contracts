@@ -66,6 +66,10 @@ module mini_games::plinko {
         num_plays: u64
     }
 
+    struct PlayerDefyCoinRewards has key {
+        rewards_balance : u64,
+    }
+
     #[event]
     struct PlayEvent has drop, store {
         player : address,
@@ -74,11 +78,11 @@ module mini_games::plinko {
         ball_path: vector<u16>,
         multiplier: u64,
         amount_won: u64,
-        // defy_coins_wom: u64 // TODO : add defy coin prize for non winning games
+        defy_coins_won: u64
     }
 
     #[event]
-    struct DefyCoinsClaimEvent {
+    struct DefyCoinsClaimEvent has drop, store {
         player: address,
         amount: u64,
     }
@@ -88,6 +92,7 @@ module mini_games::plinko {
     // min_balls_per_play: 1,
     // multiplier_divisor: 100,
     // multiplier_vector: vector[500, 400, 300, 200, 100, 80, 40, 80, 100, 200, 300, 400, 500],
+    // multiplier_vector: vector[1000, 600, 400, 200, 100, 60, 30, 60, 100, 200, 400, 600, 1000],
     // pin_lines: 12
 
     public entry fun add_or_update_game_config(
@@ -241,7 +246,7 @@ module mini_games::plinko {
     }
 
     entry fun claim<X, Y, Z, A, B>(sender: &signer, num_coins : u64)
-    acquires PlayerRewards {
+    acquires PlayerRewards , PlayerDefyCoinRewards{
 
         if (num_coins >= 1){
             assert!(exists<PlayerRewards<X>>(signer::address_of(sender)), E_ERROR_INVALID_COIN);
@@ -288,6 +293,15 @@ module mini_games::plinko {
             let coins = coin::extract(reward_coins, value);
             aptos_account::deposit_coins(signer::address_of(sender), coins);
         };
+
+        if(exists<PlayerDefyCoinRewards>(signer::address_of(sender))){
+            let player_defy_coin_rewards = borrow_global_mut<PlayerDefyCoinRewards>(signer::address_of(sender));
+            let value = player_defy_coin_rewards.rewards_balance;
+            if (value > 0){
+                player_defy_coin_rewards.rewards_balance = 0;
+                emit_defy_coins_claim_event(signer::address_of(sender), value);
+            };
+        };
     }
 
     fun init_module(_sender: &signer) {
@@ -331,7 +345,7 @@ module mini_games::plinko {
         sender: &signer,
         bet_amount: u64,
         path_hash: vector<u8>
-    ) acquires /*GameManager,*/ PlayerRewards, GameConfig {
+    ) acquires GameManager, PlayerRewards, GameConfig {
 
         if(!exists<PlayerRewards<CoinType>>(signer::address_of(sender))){
             move_to(sender, PlayerRewards<CoinType> {
@@ -340,8 +354,8 @@ module mini_games::plinko {
             });
         };
 
-        // let game_manager = borrow_global_mut<GameManager<CoinType>>(resource_account::get_address());
-        // let defy_coins_exchange_rate = game_manager.defy_coins_exchange_rate; // TODO : add defy coin prize for non winning games
+        let game_manager = borrow_global_mut<GameManager<CoinType>>(resource_account::get_address());
+        let defy_coins_exchange_rate = game_manager.defy_coins_exchange_rate;
         let game_config = borrow_global<GameConfig>(resource_account::get_address());
         let player_rewards = borrow_global_mut<PlayerRewards<CoinType>>(signer::address_of(sender));
         player_rewards.num_plays = player_rewards.num_plays + 1;
@@ -360,9 +374,14 @@ module mini_games::plinko {
         };
         let multiplier = *(vector::borrow<u64>(&game_config.multiplier_vector, (multiplier_index as u64)));
         let amount_won = (bet_amount * multiplier ) / game_config.multiplier_divisor;
+        let defy_coins_won = if (amount_won < bet_amount){
+            (bet_amount - amount_won) / defy_coins_exchange_rate
+        } else {
+            0
+        };
         let coins = house_treasury::extract_coins<CoinType>(amount_won);
         coin::merge(&mut player_rewards.rewards_balance, coins);
-        emit_play_event(signer::address_of(sender), type_info::type_name<CoinType>(), amount_won, bet_amount, ball_path, multiplier);
+        emit_play_event(signer::address_of(sender), type_info::type_name<CoinType>(), amount_won, bet_amount, ball_path, multiplier, defy_coins_won);
 
     }
 
@@ -377,7 +396,7 @@ module mini_games::plinko {
     }
 
 
-    fun emit_play_event(player: address, coin_type: String, amount_won: u64, bet_amount: u64, ball_path: vector<u16>, multiplier: u64) {
+    fun emit_play_event(player: address, coin_type: String, amount_won: u64, bet_amount: u64, ball_path: vector<u16>, multiplier: u64, defy_coins_won: u64) {
 
         0x1::event::emit(PlayEvent {
             player,
@@ -385,7 +404,15 @@ module mini_games::plinko {
             bet_amount,
             ball_path,
             multiplier,
-            amount_won
+            amount_won,
+            defy_coins_won
+        });
+    }
+
+    fun emit_defy_coins_claim_event(player: address, amount: u64) {
+        0x1::event::emit(DefyCoinsClaimEvent {
+            player,
+            amount
         });
     }
 
