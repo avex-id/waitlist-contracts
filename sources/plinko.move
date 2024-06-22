@@ -1,17 +1,18 @@
 module mini_games::plinko {
-    use std::bcs;
-    use std::hash;
+    // use std::bcs;
+    // use std::hash;
     use std::signer;
     use std::vector;
-    use std::string::{Self, String};
+    use std::string::{String};
 
-    use aptos_std::aptos_hash;
+    // use aptos_std::aptos_hash;
 
     use aptos_framework::aptos_account;
     use aptos_framework::coin::{Self, Coin};
-    use aptos_framework::timestamp;
-    use aptos_framework::transaction_context;
+    // use aptos_framework::timestamp;
+    // use aptos_framework::transaction_context;
     use aptos_framework::type_info;
+    use aptos_framework::randomness;
 
     use mini_games::resource_account_manager as resource_account;
     use mini_games::house_treasury;
@@ -313,27 +314,19 @@ module mini_games::plinko {
             pin_lines: 12
         });
     }
-    fun roll_dice(i: u64): u64 {
-        let tx_hash = transaction_context::get_transaction_hash();
-        let timestamp = bcs::to_bytes(&timestamp::now_seconds());
-        let i_bytes = bcs::to_bytes<u64>(&i);
-        vector::append(&mut tx_hash, timestamp);
-        vector::append(&mut tx_hash, i_bytes);
-        let hash = hash::sha3_256(tx_hash);
-        let value = bytes_to_u64(hash) % 6;
-        (value + 1)
-    }
 
-    fun generate_all_paths_hashes(num_balls: u64, counter: u64, coin_type: String): vector<vector<u8>> {
+    fun generate_all_paths_hashes(num_balls: u64, _counter: u64, _coin_type: String): vector<vector<u8>> {
         let paths_hashes = vector::empty<vector<u8>>();
-        let seed = transaction_context::get_transaction_hash();
-        vector::append(&mut seed, bcs::to_bytes(&timestamp::now_seconds()));
-        vector::append(&mut seed, *string::bytes(&coin_type));
+        // let seed = transaction_context::get_transaction_hash();
+        // vector::append(&mut seed, bcs::to_bytes(&timestamp::now_seconds()));
+        // vector::append(&mut seed, *string::bytes(&coin_type));
 
         for (i in 0..num_balls) {
-            vector::append(&mut seed, bcs::to_bytes(&counter));
-            vector::push_back(&mut paths_hashes, aptos_hash::blake2b_256(seed));
-            vector::pop_back(&mut seed);
+            // vector::append(&mut seed, bcs::to_bytes(&counter));
+            // vector::push_back(&mut paths_hashes, aptos_hash::blake2b_256(seed));
+            // vector::pop_back(&mut seed);
+
+            vector::push_back(&mut paths_hashes, randomness::bytes(32));
         };
 
         paths_hashes
