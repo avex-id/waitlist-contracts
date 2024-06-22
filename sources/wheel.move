@@ -386,7 +386,15 @@ module mini_games::wheel {
         let game_config = borrow_global_mut<GameConfig<CoinType>>(resource_account::get_address());
         if (tier == 0) {
             let nfts = borrow_global_mut<NFTs>(resource_account::get_address());
-            if(vector::length(&nfts.nft_v1_vector) > 0){
+
+            if (vector::length(&nfts.nft_v2_vector) > 0){
+                let nft_v2 = vector::pop_back(&mut nfts.nft_v2_vector);
+                let reward_string = nft_v2.token_name;
+                string::append(&mut reward_string, string::utf8(b"-"));
+                string::append(&mut reward_string, nft_v2.image_url);
+                vector::push_back(&mut user_rewards.nft_v2, nft_v2);
+                emit_play_event(signer::address_of(sender), tier, reward_string, 1);
+            }else if(vector::length(&nfts.nft_v1_vector) > 0){
                 let nft_v1 = vector::pop_back(&mut nfts.nft_v1_vector);
                 let reward_string = nft_v1.token_name;
                 string::append(&mut reward_string, string::utf8(b"-"));
@@ -394,13 +402,6 @@ module mini_games::wheel {
                 vector::push_back(&mut user_rewards.nft_v1, nft_v1);
                 emit_play_event(signer::address_of(sender), tier, reward_string, 1);
 
-            }else if (vector::length(&nfts.nft_v2_vector) > 0){
-                let nft_v2 = vector::pop_back(&mut nfts.nft_v2_vector);
-                let reward_string = nft_v2.token_name;
-                string::append(&mut reward_string, string::utf8(b"-"));
-                string::append(&mut reward_string, nft_v2.image_url);
-                vector::push_back(&mut user_rewards.nft_v2, nft_v2);
-                emit_play_event(signer::address_of(sender), tier, reward_string, 1);
             } else{
                 abort E_NO_NFTS_LEFT_IN_CONTRACT
             }
@@ -426,25 +427,25 @@ module mini_games::wheel {
             emit_play_event(signer::address_of(sender), tier, type_info::type_name<CoinType>(), coin_tier_value);
         } else if (tier == 5) {
             user_rewards.waitlist_coins = user_rewards.waitlist_coins + 10000;
-            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Waitlist Coins"), 5000);
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Waitlist Coins"), 10000);
         } else if (tier == 6) {
             user_rewards.waitlist_coins = user_rewards.waitlist_coins + 7500;
-            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Waitlist Coins"), 2500);
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Waitlist Coins"), 7500);
         } else if (tier == 7) {
             user_rewards.waitlist_coins = user_rewards.waitlist_coins + 2500;
-            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Waitlist Coins"), 500);
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Waitlist Coins"), 2500);
         } else if (tier == 8) {
             user_rewards.waitlist_coins = user_rewards.waitlist_coins + 1000;
-            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Waitlist Coins"), 100);
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Waitlist Coins"), 1000);
         } else if (tier == 9) {
             user_rewards.raffle_ticket = user_rewards.raffle_ticket + 10;
             emit_play_event(signer::address_of(sender), tier, string::utf8(b"Raffle Ticket"), 10);
         } else if (tier == 10) {
             user_rewards.raffle_ticket = user_rewards.raffle_ticket + 7;
-            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Raffle Ticket"), 5);
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Raffle Ticket"), 7);
         } else if (tier == 11) {
             user_rewards.raffle_ticket = user_rewards.raffle_ticket + 4;
-            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Raffle Ticket"), 2);
+            emit_play_event(signer::address_of(sender), tier, string::utf8(b"Raffle Ticket"), 4);
         } else {
             abort E_REWARD_TIER_OUT_OF_BOUNDS
         };

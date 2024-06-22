@@ -220,6 +220,22 @@ module mini_games::raffle {
         raffle_manager.nft_v2_raffle_count = nft_v2_raffle_count + 1;
     }
 
+    public entry fun bulk_mint_mickets(admin: &signer, to: vector<address>, amount: vector<u64>)
+    acquires RaffleManager {
+        assert!(check_status(), E_ERROR_RAFFLE_PAUSED);
+        assert!(caller_acl(signer::address_of(admin)), E_ERROR_UNAUTHORIZED);
+        assert!(vector::length(&to) == vector::length(&amount), E_ERROR_INVALID_NUM_WINNERS);
+
+        let resource_address = resource_account::get_address();
+        let tickets = &mut borrow_global_mut<RaffleManager>(resource_address).tickets;
+
+        for (i in 0..vector::length(&to)) {
+            let current_amount = table::borrow_mut_with_default(tickets, *vector::borrow(&to, i), 0);
+            *current_amount = *current_amount + *vector::borrow(&amount, i);
+            emit_ticket_mint_event(*vector::borrow(&to, i), *vector::borrow(&amount, i));
+        }
+    }
+
     public entry fun mint_ticket(admin: &signer, to: address, amount: u64)
     acquires RaffleManager {
         assert!(check_status(), E_ERROR_RAFFLE_PAUSED);
