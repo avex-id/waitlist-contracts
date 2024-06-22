@@ -127,6 +127,45 @@ module mini_games::coin_flip {
         let game_manager = borrow_global_mut<GameManager<Heads, Tails>>(resource_account::get_address());
         game_manager.active = true;
     }
+    public entry fun change_house_edge_numerator_and_denominator<Heads, Tails>(
+        sender: &signer,
+        house_edge_numerator: u64,
+        house_edge_denominator: u64
+    ) acquires GameManager {
+        assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
+        let game_manager = borrow_global_mut<GameManager<Heads, Tails>>(resource_account::get_address());
+        game_manager.house_edge_numerator = house_edge_numerator;
+        game_manager.house_edge_denominator = house_edge_denominator;
+    }
+
+    public entry fun edit_game_config<Heads, Tails>(
+        sender: &signer,
+        active: bool,
+        max_bet_amount_heads: u64,
+        min_bet_amount_heads: u64,
+        max_bet_amount_tails: u64,
+        min_bet_amount_tails: u64,
+        win_multiplier_numerator: u64,
+        win_multiplier_denominator: u64,
+        house_edge_numerator: u64,
+        house_edge_denominator: u64,
+        defy_coins_exchange_rate_heads: u64,
+        defy_coins_exchange_rate_tails: u64
+    ) acquires GameManager {
+        assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
+        let game_manager = borrow_global_mut<GameManager<Heads, Tails>>(resource_account::get_address());
+        game_manager.active = active;
+        game_manager.max_bet_amount_heads = max_bet_amount_heads;
+        game_manager.min_bet_amount_heads = min_bet_amount_heads;
+        game_manager.max_bet_amount_tails = max_bet_amount_tails;
+        game_manager.min_bet_amount_tails = min_bet_amount_tails;
+        game_manager.win_multiplier_numerator = win_multiplier_numerator;
+        game_manager.win_multiplier_denominator = win_multiplier_denominator;
+        game_manager.house_edge_numerator = house_edge_numerator;
+        game_manager.house_edge_denominator = house_edge_denominator;
+        game_manager.defy_coins_exchange_rate_heads = defy_coins_exchange_rate_heads;
+        game_manager.defy_coins_exchange_rate_tails = defy_coins_exchange_rate_tails;
+    }
 
     public entry fun set_max_and_min_bet_amount<Heads, Tails>(
         sender: &signer,
