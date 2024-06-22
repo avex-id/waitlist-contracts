@@ -44,6 +44,8 @@ module mini_games::coin_flip {
         min_bet_amount_tails: u64,
         win_multiplier_numerator: u64,
         win_multiplier_denominator: u64,
+        house_edge_numerator: u64,
+        house_edge_denominator: u64,
         defy_coins_exchange_rate_heads: u64,
         defy_coins_exchange_rate_tails: u64
     }
@@ -88,6 +90,8 @@ module mini_games::coin_flip {
         min_bet_amount_tails: u64,
         win_multiplier_numerator: u64,
         win_multiplier_denominator: u64,
+        house_edge_numerator: u64,
+        house_edge_denominator: u64,
         defy_coins_exchange_rate_heads: u64,
         defy_coins_exchange_rate_tails: u64
     ) {
@@ -101,6 +105,8 @@ module mini_games::coin_flip {
             min_bet_amount_tails,
             win_multiplier_numerator,
             win_multiplier_denominator,
+            house_edge_numerator,
+            house_edge_denominator,
             defy_coins_exchange_rate_heads,
             defy_coins_exchange_rate_tails
         });
@@ -120,6 +126,45 @@ module mini_games::coin_flip {
         assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
         let game_manager = borrow_global_mut<GameManager<Heads, Tails>>(resource_account::get_address());
         game_manager.active = true;
+    }
+    public entry fun change_house_edge_numerator_and_denominator<Heads, Tails>(
+        sender: &signer,
+        house_edge_numerator: u64,
+        house_edge_denominator: u64
+    ) acquires GameManager {
+        assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
+        let game_manager = borrow_global_mut<GameManager<Heads, Tails>>(resource_account::get_address());
+        game_manager.house_edge_numerator = house_edge_numerator;
+        game_manager.house_edge_denominator = house_edge_denominator;
+    }
+
+    public entry fun edit_game_config<Heads, Tails>(
+        sender: &signer,
+        active: bool,
+        max_bet_amount_heads: u64,
+        min_bet_amount_heads: u64,
+        max_bet_amount_tails: u64,
+        min_bet_amount_tails: u64,
+        win_multiplier_numerator: u64,
+        win_multiplier_denominator: u64,
+        house_edge_numerator: u64,
+        house_edge_denominator: u64,
+        defy_coins_exchange_rate_heads: u64,
+        defy_coins_exchange_rate_tails: u64
+    ) acquires GameManager {
+        assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
+        let game_manager = borrow_global_mut<GameManager<Heads, Tails>>(resource_account::get_address());
+        game_manager.active = active;
+        game_manager.max_bet_amount_heads = max_bet_amount_heads;
+        game_manager.min_bet_amount_heads = min_bet_amount_heads;
+        game_manager.max_bet_amount_tails = max_bet_amount_tails;
+        game_manager.min_bet_amount_tails = min_bet_amount_tails;
+        game_manager.win_multiplier_numerator = win_multiplier_numerator;
+        game_manager.win_multiplier_denominator = win_multiplier_denominator;
+        game_manager.house_edge_numerator = house_edge_numerator;
+        game_manager.house_edge_denominator = house_edge_denominator;
+        game_manager.defy_coins_exchange_rate_heads = defy_coins_exchange_rate_heads;
+        game_manager.defy_coins_exchange_rate_tails = defy_coins_exchange_rate_tails;
     }
 
     public entry fun set_max_and_min_bet_amount<Heads, Tails>(
@@ -191,8 +236,8 @@ module mini_games::coin_flip {
             let bet_coins = coin::withdraw<Heads>(sender, bet_amount);
             house_treasury::merge_coins<Heads>(bet_coins);
 
-            let coin_flip_value = randomness::u64_range(0, 2);
-
+            // let coin_flip_value = randomness::u64_range(0, 2);
+            let coin_flip_value = get_coin_flip_value_with_house_edge(selected_coin_face, game_manager.house_edge_numerator, game_manager.house_edge_denominator);
             handle_roll<Heads, Tails>(sender, coin_flip_value, selected_coin_face, bet_amount);
 
         } else if (selected_coin_face == TAILS){
@@ -202,17 +247,16 @@ module mini_games::coin_flip {
             let bet_coins = coin::withdraw<Tails>(sender, bet_amount);
             house_treasury::merge_coins<Tails>(bet_coins);
 
-            let coin_flip_value = randomness::u64_range(0, 2);
-
+            let coin_flip_value = get_coin_flip_value_with_house_edge(selected_coin_face, game_manager.house_edge_numerator, game_manager.house_edge_denominator);
             handle_roll<Heads, Tails>(sender, coin_flip_value, selected_coin_face, bet_amount);
 
         } else {
-            assert!(false, E_ERROR_INVALID_BET_TYPE);
+            abort E_ERROR_INVALID_BET_TYPE;
         };
     }
 
     entry fun claim<X, Y, Z, A, B>(sender: &signer, num_coins : u64)
-    acquires PlayerRewards {
+    acquires PlayerRewards , PlayerDefyCoinsRewards{
 
         if (num_coins >= 1){
             assert!(exists<PlayerRewards<X>>(signer::address_of(sender)), E_ERROR_INVALID_COIN);
@@ -259,6 +303,14 @@ module mini_games::coin_flip {
             let coins = coin::extract(reward_coins, value);
             aptos_account::deposit_coins(signer::address_of(sender), coins);
         };
+
+        if(exists<PlayerDefyCoinsRewards>(signer::address_of(sender))){
+            let defy_coins_rewards = borrow_global_mut<PlayerDefyCoinsRewards>(signer::address_of(sender));
+            if (defy_coins_rewards.rewards_balance > 0){
+                emit_defy_coins_claim_event(signer::address_of(sender), defy_coins_rewards.rewards_balance);
+                defy_coins_rewards.rewards_balance = 0;
+            };
+        }
     }
 
 
@@ -288,7 +340,6 @@ module mini_games::coin_flip {
         };
 
         let game_manager = borrow_global_mut<GameManager<Heads, Tails>>(resource_account::get_address());
-
 
         if ( selected_coin_face == coin_flip_value && selected_coin_face == HEADS){
             let player_rewards = borrow_global_mut<PlayerRewards<Heads>>(signer::address_of(sender));
@@ -323,6 +374,38 @@ module mini_games::coin_flip {
         };
     }
 
+    //  for house edge of 10%
+    //  numerator = 100, denominator = 10
+    //  range_with_house_edge  = 100/10 = 10
+    //  range_with_house_edge = 10/2 = 5
+    //  if random num <= 45 then HEADS
+    //  else if  random number >= 56 then TAILS
+    //  else user always loses, hence 10% edge for the house
+    fun get_coin_flip_value_with_house_edge(
+        selected_coin_face: u64,
+        house_edge_numerator: u64,
+        house_edge_denominator: u64
+    ): u64 {
+        let random_number = randomness::u64_range(1,101);
+        let range_with_house_edge = house_edge_numerator / (house_edge_denominator);
+        range_with_house_edge = range_with_house_edge / 2;
+        let coin_side = if (random_number <= (50-range_with_house_edge)){
+            HEADS
+        } else if (random_number >= (51+range_with_house_edge)){
+            TAILS
+        } else{
+            let result = if (selected_coin_face == HEADS){
+                TAILS
+            } else if (selected_coin_face == TAILS){
+                HEADS
+            } else {
+                assert!(false, E_ERROR_INVALID_BET_TYPE);
+                3
+            };
+            result
+        };
+        coin_side
+    }
 
 
     fun emit_play_event(
@@ -350,6 +433,16 @@ module mini_games::coin_flip {
             bet_amount,
             amount_won,
             defy_coins_won
+        });
+    }
+
+    fun emit_defy_coins_claim_event(
+        player : address,
+        defy_coins_claimed: u64
+    ){
+        0x1::event::emit(DefyCoinsClaimEvent{
+            player,
+            defy_coins_won: defy_coins_claimed
         });
     }
 
