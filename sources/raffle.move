@@ -12,6 +12,7 @@ module mini_games::raffle {
     use aptos_framework::timestamp;
     use aptos_framework::randomness;
     use aptos_framework::type_info;
+    use aptos_framework::aptos_coin::AptosCoin;
 
     use aptos_token::token::{Self as tokenv1, Token as TokenV1};
     use aptos_token::token_transfers;
@@ -39,6 +40,8 @@ module mini_games::raffle {
     const E_CANNOT_USE_EXCESSIVE_TICKETS: u64 = 9;
     /// depriciated function, please use the new version
     const E_DEPRICIATED: u64 = 10;
+
+    const FEE: u64 = 300000;
 
     struct RaffleManager has key {
         tickets: Table<address, u64>,
@@ -259,6 +262,10 @@ module mini_games::raffle {
     ) acquires RaffleManager, CoinRaffleManager, NftRaffleManager, NFTRaffle, NFTV2Raffle{
         assert!(check_status(), E_ERROR_RAFFLE_PAUSED);
         assert!(tickets_to_use <= 100 , E_CANNOT_USE_EXCESSIVE_TICKETS);
+
+        // Implementing fee to hopefully prevent bot spamming
+        let coin = coin::withdraw<AptosCoin>(sender, FEE);
+        coin::deposit<AptosCoin>(resource_account::get_address(), coin);
 
         let raffle_manager = borrow_global_mut<RaffleManager>(resource_account::get_address());
 
