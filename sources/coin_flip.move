@@ -251,7 +251,7 @@ module mini_games::coin_flip {
             handle_roll<Heads, Tails>(sender, coin_flip_value, selected_coin_face, bet_amount);
 
         } else {
-            abort E_ERROR_INVALID_BET_TYPE;
+            abort E_ERROR_INVALID_BET_TYPE
         };
     }
 

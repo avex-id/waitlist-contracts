@@ -18,6 +18,7 @@ module mini_games::wheel {
     use mini_games::raffle;
     use mini_games::house_treasury;
 
+
     /// you are not authorized to call this function
     const E_ERROR_UNAUTHORIZED: u64 = 1;
     /// reward tier calculated is out of bounds

@@ -13,6 +13,7 @@ module mini_games::nft_lottery {
     use aptos_framework::coin::{Self, Coin};
     use aptos_framework::table::{Self, Table};
     use aptos_framework::timestamp;
+    use aptos_framework::type_info;
     use aptos_framework::randomness;
 
     use mini_games::resource_account_manager as resource_account;
@@ -53,6 +54,16 @@ module mini_games::nft_lottery {
         game_address: Option<address>,
         player: address,
         timestamp: u64,
+    }
+
+    #[event]
+    struct RewardEventV2 has drop, store {
+        reward_type: String,
+        reward_amount: u64,
+        game_address: Option<address>,
+        player: address,
+        bet_amount: u64,
+        coin_type: String,
     }
 
     struct LotteryManager has key {
@@ -260,13 +271,10 @@ module mini_games::nft_lottery {
         nft_store: Object<NFTStore>,
     ) acquires LotteryManager, NFTStore, Rewards {
         assert!(check_status(), E_ERROR_LOTTERY_PAUSED);
-        // assert!(winning_percentage >= 0 && winning_percentage <= 100, E_ERROR_PERCENTAGE_OUT_OF_BOUNDS);
         assert!(check_percentage_bounds(winning_percentage), E_ERROR_PERCENTAGE_OUT_OF_BOUNDS);
-        // assert!(object::owner(nft_store) == resource_account::get_address(), E_ERROR_UNAUTHORIZED);
         assert!(check_is_nft_v1_still_valid(nft_store) , E_ERROR_NFT_ALREADY_WON);
 
         let token_floor_price = borrow_global<NFTStore>(object::object_address(&nft_store)).token_floor_price;
-        // let fee_amount = token_floor_price * (winning_percentage + 1) / 100;
         let spin_cost = (token_floor_price * winning_percentage * MULTIPLIER) / (DIVISOR * 100);
         let service_fee = (token_floor_price * MULTIPLIER) / (DIVISOR * 100);
 
@@ -328,13 +336,10 @@ module mini_games::nft_lottery {
         nft_v2_store: Object<NFTV2Store>,
     ) acquires LotteryManager, NFTV2Store, Rewards {
         assert!(check_status(), E_ERROR_LOTTERY_PAUSED);
-        // assert!(winning_percentage >= (0 * DIVISOR) && winning_percentage <= (100 * DIVISOR), E_ERROR_PERCENTAGE_OUT_OF_BOUNDS);
         assert!(check_percentage_bounds(winning_percentage), E_ERROR_PERCENTAGE_OUT_OF_BOUNDS);
         assert!(check_is_nft_v2_still_valid(nft_v2_store), E_ERROR_NFT_ALREADY_WON);
-        // assert!(object::owner(nft_v2_store) == resource_account::get_address(), E_ERROR_UNAUTHORIZED);
 
         let token_floor_price = borrow_global<NFTV2Store>(object::object_address(&nft_v2_store)).token_floor_price;
-        // let fee_amount = token_floor_price * (winning_percentage + 1) / 100;
         let spin_cost = (token_floor_price * winning_percentage * MULTIPLIER) / (DIVISOR * 100);
         let service_fee = (token_floor_price * MULTIPLIER) / (DIVISOR * 100);
 
@@ -385,7 +390,7 @@ module mini_games::nft_lottery {
 
         // Claim v1 NFTs if any
         vector::for_each<Object<NFTStore>>(player_rewards.nft, |nft| {
-            let NFTStore { token, token_floor_price } = move_from<NFTStore>(object::object_address(&nft));
+            let NFTStore { token, token_floor_price : _token_floor_price } = move_from<NFTStore>(object::object_address(&nft));
             tokenv1::deposit_token(sender, token);
             object::transfer(&resource_account::get_signer(), nft, sender_address);
         });
@@ -395,7 +400,7 @@ module mini_games::nft_lottery {
         vector::for_each<Object<NFTV2Store>>(player_rewards.nft_v2, |nft_v2| {
             let NFTV2Store {
                 token_v2,
-                token_floor_price,
+                token_floor_price: _token_floor_price,
                 extend_ref,
                 delete_ref
             } = move_from<NFTV2Store>(object::object_address(&nft_v2));
@@ -478,7 +483,7 @@ module mini_games::nft_lottery {
                 free_spin: vector::empty<u64>(),
                 raffle_ticket: 0,
                 waitlist_coins: 0,
-            })};
+        })};
 
         let reward_address = if (type == 0) {
             option::some(object::object_address(option::borrow(&nft_store)))
@@ -493,18 +498,16 @@ module mini_games::nft_lottery {
         if (tier == 0) {
             if (type == 0){
                 let sender_nfts = &mut player_rewards.nft;
-                let nft_address = object::object_address(option::borrow(&nft_store));
                 vector::push_back(sender_nfts, *option::borrow(&nft_store));
                 let nfts = &mut borrow_global_mut<LotteryManager>(resource_account::get_address()).nft_v1;
                 vector::remove_value(nfts, option::borrow(&nft_store));
-                emit_event(string::utf8(b"NFT v1"), 1, option::some(nft_address), signer::address_of(sender));
+                emit_rewards_v2_event(string::utf8(b"NFT v1"), 1, reward_address, signer::address_of(sender), fee_amount, type_info::type_name<AptosCoin>());
             } else if (type == 1) {
                 let sender_nfts_v2 = &mut player_rewards.nft_v2;
-                let nft_v2_address = object::object_address(option::borrow(&nft_v2_store));
                 vector::push_back(sender_nfts_v2, *option::borrow(&nft_v2_store));
                 let nfts_v2 = &mut borrow_global_mut<LotteryManager>(resource_account::get_address()).nft_v2;
                 vector::remove_value(nfts_v2, option::borrow(&nft_v2_store));
-                emit_event(string::utf8(b"NFT v2"), 1, option::some(nft_v2_address), signer::address_of(sender));
+                emit_rewards_v2_event(string::utf8(b"NFT v2"), 1, reward_address, signer::address_of(sender), fee_amount, type_info::type_name<AptosCoin>());
             } else {
                 abort E_ERROR_INVALID_TYPE
             }
@@ -515,21 +518,19 @@ module mini_games::nft_lottery {
             coin::merge(&mut player_rewards.apt, coin);
 
             let reward_type = string::utf8(b"2x APT REWARD");
-            // string::append(&mut reward_type, string::utf8(bcs::to_bytes(&coin_amount)));
-            emit_event(reward_type, coin_amount, reward_address, signer::address_of(sender));
+            emit_rewards_v2_event(reward_type, coin_amount, reward_address, signer::address_of(sender), fee_amount, type_info::type_name<AptosCoin>())
         } else if (tier == 2) {
             // 1 free spin
             vector::push_back(&mut player_rewards.free_spin, winning_percentage);
-            emit_event(string::utf8(b"Free Spin"), 1, reward_address, signer::address_of(sender));
+            emit_rewards_v2_event(string::utf8(b"Free Spin"), 1, reward_address, signer::address_of(sender), fee_amount, type_info::type_name<AptosCoin>());
         } else if (tier == 3) {
             // 50% of the apt_balance amount
             let coin_amount = fee_amount / 2;
             let coin = house_treasury::extract_coins<AptosCoin>(coin_amount);
             coin::merge(&mut player_rewards.apt, coin);
-
             let reward_type = string::utf8(b"50% APT CASHBACK");
             // string::append(&mut reward_type, string::utf8(bcs::to_bytes(&coin_amount)));
-            emit_event(reward_type, coin_amount, reward_address, signer::address_of(sender));
+            emit_rewards_v2_event(reward_type, coin_amount, reward_address, signer::address_of(sender), fee_amount, type_info::type_name<AptosCoin>());
         } else if (tier == 4) {
             // 40% of the apt_balance amount
             let coin_amount = (fee_amount * 4) / 10;
@@ -538,7 +539,7 @@ module mini_games::nft_lottery {
 
             let reward_type = string::utf8(b"40% APT CASHBACK");
             // string::append(&mut reward_type, string::utf8(bcs::to_bytes(&coin_amount)));
-            emit_event(reward_type, coin_amount, reward_address, signer::address_of(sender));
+            emit_rewards_v2_event(reward_type, coin_amount, reward_address, signer::address_of(sender), fee_amount, type_info::type_name<AptosCoin>());
         } else if (tier == 5) {
             // 30% of the apt_balance amount
             let coin_amount = (fee_amount * 3) / 10;
@@ -546,17 +547,16 @@ module mini_games::nft_lottery {
             coin::merge(&mut player_rewards.apt, coin);
 
             let reward_type = string::utf8(b"30% APT CASHBACK");
-            // string::append(&mut reward_type, string::utf8(bcs::to_bytes(&coin_amount)));
-            emit_event(reward_type, coin_amount, reward_address, signer::address_of(sender));
+            emit_rewards_v2_event(reward_type, coin_amount, reward_address, signer::address_of(sender), fee_amount, type_info::type_name<AptosCoin>());
         } else if (tier == 6) {
             // 1 raffle ticket
             player_rewards.raffle_ticket = player_rewards.raffle_ticket + 1;
-            emit_event(string::utf8(b"Raffle Ticket"), 1, reward_address, signer::address_of(sender));
+            emit_rewards_v2_event(string::utf8(b"Raffle Ticket"), 1, reward_address, signer::address_of(sender), fee_amount, type_info::type_name<AptosCoin>());
         } else if (tier == 7) {
             // waitlist coins at price - 1 apt = 3000 coins
             let waitlist_coins_amount = (WAITLIST_COINS_PRICE_PER_APTOS * fee_amount) / WAITLIST_COINS_PRICE_PER_APTOS_DIVISOR;
             player_rewards.waitlist_coins = player_rewards.waitlist_coins + waitlist_coins_amount;
-            emit_event(string::utf8(b"Waitlist Coins"), waitlist_coins_amount, reward_address, signer::address_of(sender));
+            emit_rewards_v2_event(string::utf8(b"Waitlist Coins"), waitlist_coins_amount, reward_address, signer::address_of(sender), fee_amount, type_info::type_name<AptosCoin>());
         } else {
             abort E_REWARD_TIER_OUT_OF_BOUNDS
         };
@@ -619,6 +619,17 @@ module mini_games::nft_lottery {
             game_address,
             player,
             timestamp: timestamp::now_microseconds(),
+        });
+    }
+
+    fun emit_rewards_v2_event(reward_type: String, reward_amount: u64, game_address: Option<address>, player: address, bet_amount: u64, coin_type:String){
+        0x1::event::emit(RewardEventV2 {
+            reward_type,
+            reward_amount,
+            game_address,
+            player,
+            bet_amount,
+            coin_type
         });
     }
 
