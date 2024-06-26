@@ -1,16 +1,10 @@
 module mini_games::plinko {
-    // use std::bcs;
-    // use std::hash;
     use std::signer;
     use std::vector;
     use std::string::{String};
 
-    // use aptos_std::aptos_hash;
-
     use aptos_framework::aptos_account;
     use aptos_framework::coin::{Self, Coin};
-    // use aptos_framework::timestamp;
-    // use aptos_framework::transaction_context;
     use aptos_framework::type_info;
     use aptos_framework::randomness;
 
@@ -92,11 +86,10 @@ module mini_games::plinko {
     // max_balls_per_play: 10,
     // min_balls_per_play: 1,
     // multiplier_divisor: 100,
-    // multiplier_vector: vector[500, 400, 300, 200, 100, 80, 40, 80, 100, 200, 300, 400, 500],
     // multiplier_vector: vector[1000, 600, 400, 200, 100, 60, 30, 60, 100, 200, 400, 600, 1000],
     // pin_lines: 12
 
-    public entry fun add_or_update_game_config(
+    public entry fun add_or_update_game_config( // TODO: change name before mainnet deployment to just add not update
         sender: &signer,
         max_balls_per_play: u64,
         min_balls_per_play: u64,
@@ -216,11 +209,12 @@ module mini_games::plinko {
 
 
 
+    #[randomness]
     entry fun play<CoinType>(
         sender: &signer,
         bet_amount: u64,
         num_balls: u64,
-    ) acquires GameManager, PlayerRewards, GameConfig {
+    ) acquires GameManager, PlayerRewards, GameConfig , PlayerDefyCoinRewards{
         assert!(house_treasury::is_treasury_active<CoinType>(), E_ERROR_TREASURY_NOT_ACTIVE_FOR_THIS_COIN);
         assert!(exists<GameManager<CoinType>>(resource_account::get_address()), E_GAME_FOR_COIN_TYPE_DOES_NOT_EXIST);
         assert!(exists<GameConfig>(resource_account::get_address()), E_GAME_FOR_COIN_TYPE_DOES_NOT_EXIST);
@@ -305,27 +299,20 @@ module mini_games::plinko {
         };
     }
 
-    fun init_module(_sender: &signer) {
-        move_to(&resource_account::get_signer(), GameConfig{
-            max_balls_per_play: 10,
-            min_balls_per_play: 1,
-            multiplier_divisor: 100,
-            multiplier_vector: vector[500, 400, 300, 200, 100, 80, 40, 80, 100, 200, 300, 400, 500],
-            pin_lines: 12
-        });
-    }
+    // commented as this wont run on contract upgrade
+    // fun init_module(_sender: &signer) {
+    //     move_to(&resource_account::get_signer(), GameConfig{
+    //         max_balls_per_play: 10,
+    //         min_balls_per_play: 1,
+    //         multiplier_divisor: 100,
+    //         multiplier_vector: vector[500, 400, 300, 200, 100, 80, 40, 80, 100, 200, 300, 400, 500],
+    //         pin_lines: 12
+    //     });
+    // }
 
     fun generate_all_paths_hashes(num_balls: u64, _counter: u64, _coin_type: String): vector<vector<u8>> {
         let paths_hashes = vector::empty<vector<u8>>();
-        // let seed = transaction_context::get_transaction_hash();
-        // vector::append(&mut seed, bcs::to_bytes(&timestamp::now_seconds()));
-        // vector::append(&mut seed, *string::bytes(&coin_type));
-
         for (i in 0..num_balls) {
-            // vector::append(&mut seed, bcs::to_bytes(&counter));
-            // vector::push_back(&mut paths_hashes, aptos_hash::blake2b_256(seed));
-            // vector::pop_back(&mut seed);
-
             vector::push_back(&mut paths_hashes, randomness::bytes(32));
         };
 
@@ -338,7 +325,7 @@ module mini_games::plinko {
         sender: &signer,
         bet_amount: u64,
         path_hash: vector<u8>
-    ) acquires GameManager, PlayerRewards, GameConfig {
+    ) acquires GameManager, PlayerRewards, GameConfig, PlayerDefyCoinRewards {
 
         if(!exists<PlayerRewards<CoinType>>(signer::address_of(sender))){
             move_to(sender, PlayerRewards<CoinType> {
@@ -347,10 +334,17 @@ module mini_games::plinko {
             });
         };
 
+        if(!exists<PlayerDefyCoinRewards>(signer::address_of(sender))){
+            move_to(sender, PlayerDefyCoinRewards {
+                rewards_balance: 0
+            });
+        };
+
         let game_manager = borrow_global_mut<GameManager<CoinType>>(resource_account::get_address());
         let defy_coins_exchange_rate = game_manager.defy_coins_exchange_rate;
         let game_config = borrow_global<GameConfig>(resource_account::get_address());
         let player_rewards = borrow_global_mut<PlayerRewards<CoinType>>(signer::address_of(sender));
+        let player_defy_coin_rewards = borrow_global_mut<PlayerDefyCoinRewards>(signer::address_of(sender));
         player_rewards.num_plays = player_rewards.num_plays + 1;
 
         let ball_path = vector::empty<u16>();
@@ -372,6 +366,7 @@ module mini_games::plinko {
         } else {
             0
         };
+        player_defy_coin_rewards.rewards_balance = player_defy_coin_rewards.rewards_balance + defy_coins_won;
         let coins = house_treasury::extract_coins<CoinType>(amount_won);
         coin::merge(&mut player_rewards.rewards_balance, coins);
         emit_play_event(signer::address_of(sender), type_info::type_name<CoinType>(), amount_won, bet_amount, ball_path, multiplier, defy_coins_won);
