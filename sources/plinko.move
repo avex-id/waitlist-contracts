@@ -89,7 +89,8 @@ module mini_games::plinko {
     // multiplier_vector: vector[1000, 600, 400, 200, 100, 60, 30, 60, 100, 200, 400, 600, 1000],
     // pin_lines: 12
 
-    public entry fun add_or_update_game_config( // TODO: change name before mainnet deployment to just add not update
+    // public entry fun add_or_update_game_config(
+    public entry fun add_game_config( // TODO: change name before mainnet deployment to just add not update
         sender: &signer,
         max_balls_per_play: u64,
         min_balls_per_play: u64,
@@ -182,19 +183,20 @@ module mini_games::plinko {
         game_config.min_balls_per_play = min_balls_per_play;
     }
 
-    public entry fun set_multiplier_divisor<CoinType>(
-        sender: &signer,
-        multiplier_divisor: u64
-    ) acquires GameConfig {
-        assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
-        let game_config = borrow_global_mut<GameConfig>(resource_account::get_address());
-        game_config.multiplier_divisor = multiplier_divisor;
-    }
+    // public entry fun set_multiplier_divisor<CoinType>(
+    //     sender: &signer,
+    //     multiplier_divisor: u64
+    // ) acquires GameConfig {
+    //     assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
+    //     let game_config = borrow_global_mut<GameConfig>(resource_account::get_address());
+    //     game_config.multiplier_divisor = multiplier_divisor;
+    // }
 
     public entry fun set_pin_lines_and_multiplier_vector<CoinType>(
         sender: &signer,
         pin_lines: u64,
-        multiplier_vector: vector<u64>
+        multiplier_vector: vector<u64>,
+        multiplier_divisor: u64
     ) acquires GameConfig {
         assert!(signer::address_of(sender) == @mini_games, E_ERROR_UNAUTHORIZED);
         assert!(pin_lines > 0 , E_ERROR_NUM_PIN_LINES_CANNOT_BE_ZERO);
@@ -204,6 +206,7 @@ module mini_games::plinko {
         assert!(vec_len == pins_in_last_line-1, E_ERROR_INVALID_NUM_PIN_LINES_OR_VECTOR_LEN);
         game_config.pin_lines = pin_lines;
         game_config.multiplier_vector = multiplier_vector;
+        game_config.multiplier_divisor = multiplier_divisor;
     }
 
 
