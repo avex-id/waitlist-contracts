@@ -297,8 +297,7 @@ module mini_games::nft_lottery {
             winning_percentage = vector::remove(&mut player_rewards.free_spin, 0);
         } else {
             let fees = coin::withdraw<AptosCoin>(sender, (spin_cost  + service_fee));
-            let lottery_manager = borrow_global_mut<LotteryManager>(resource_account::get_address());
-            coin::merge<AptosCoin>(&mut lottery_manager.apt_balance, fees);
+            house_treasury::merge_coins<AptosCoin>(fees);
         };
 
         let random_num = randomness::u64_range(0, 10000);
@@ -361,8 +360,7 @@ module mini_games::nft_lottery {
             winning_percentage = vector::remove(&mut player_rewards.free_spin, 0);
         } else {
             let fees = coin::withdraw<AptosCoin>(sender, (spin_cost + service_fee));
-            let lottery_manager = borrow_global_mut<LotteryManager>(resource_account::get_address());
-            coin::merge<AptosCoin>(&mut lottery_manager.apt_balance, fees);
+            house_treasury::merge_coins<AptosCoin>(fees);
         };
 
         let random_num = randomness::u64_range(0, 10000);
