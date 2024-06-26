@@ -90,7 +90,7 @@ module mini_games::plinko {
     // pin_lines: 12
 
     // public entry fun add_or_update_game_config(
-    public entry fun add_game_config( // TODO: change name before mainnet deployment to just add not update
+    public entry fun add_game_config(
         sender: &signer,
         max_balls_per_play: u64,
         min_balls_per_play: u64,
