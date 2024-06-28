@@ -235,8 +235,7 @@ module mini_games::plinko {
         let bet_coins = coin::withdraw<CoinType>(sender, total_bet);
         house_treasury::merge_coins(bet_coins);
 
-        let plinko_path_hashes  = generate_all_paths_hashes(num_balls, game_manager.counter, type_info::type_name<CoinType>());
-        game_manager.counter = game_manager.counter + num_balls;
+        let plinko_path_hashes  = generate_all_paths_hashes(num_balls);
 
         for( i in 0..num_balls ){
             handle_drop<CoinType>(sender, bet_amount, *vector::borrow<vector<u8>>(&plinko_path_hashes, i));
@@ -313,7 +312,7 @@ module mini_games::plinko {
     //     });
     // }
 
-    fun generate_all_paths_hashes(num_balls: u64, _counter: u64, _coin_type: String): vector<vector<u8>> {
+    fun generate_all_paths_hashes(num_balls: u64): vector<vector<u8>> {
         let paths_hashes = vector::empty<vector<u8>>();
         for (i in 0..num_balls) {
             vector::push_back(&mut paths_hashes, randomness::bytes(32));
