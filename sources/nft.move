@@ -45,6 +45,8 @@ module mini_games::nft_lottery {
     const WAITLIST_COINS_PRICE_PER_APTOS: u64 = 3000;
     const WAITLIST_COINS_PRICE_PER_APTOS_DIVISOR: u64 = 100000000;
     const MAX_SPINS:u64 = 10;
+    const BASE_FEE_MULTIPLIER: u64 = 40;
+    const BASE_FEE_DIVISOR: u64 = 10;
 
 
     #[event]
@@ -275,8 +277,7 @@ module mini_games::nft_lottery {
         assert!(check_is_nft_v1_still_valid(nft_store) , E_ERROR_NFT_ALREADY_WON);
 
         let token_floor_price = borrow_global<NFTStore>(object::object_address(&nft_store)).token_floor_price;
-        let spin_cost = (token_floor_price * winning_percentage * MULTIPLIER) / (DIVISOR * 100);
-        let service_fee = (token_floor_price * MULTIPLIER) / (DIVISOR * 100);
+        let spin_cost = (token_floor_price * winning_percentage * MULTIPLIER * BASE_FEE_MULTIPLIER) / (DIVISOR * 100 * BASE_FEE_DIVISOR);
 
 
         if(!table::contains(&borrow_global<Rewards>(resource_account::get_address()).rewards, signer::address_of(sender))){
@@ -296,15 +297,14 @@ module mini_games::nft_lottery {
         if (use_free_spin && free_spin_length > 0){
             winning_percentage = vector::remove(&mut player_rewards.free_spin, 0);
         } else {
-            let fees = coin::withdraw<AptosCoin>(sender, (spin_cost  + service_fee));
-            let lottery_manager = borrow_global_mut<LotteryManager>(resource_account::get_address());
-            coin::merge<AptosCoin>(&mut lottery_manager.apt_balance, fees);
+            let fees = coin::withdraw<AptosCoin>(sender, (spin_cost));
+            house_treasury::merge_coins<AptosCoin>(fees);
         };
 
         let random_num = randomness::u64_range(0, 10000);
 
         let tier = allot_tier(winning_percentage * MULTIPLIER, random_num);
-        handle_tier(sender, tier, winning_percentage, spin_cost + service_fee, option::some(nft_store), option::none(), 0);
+        handle_tier(sender, tier, winning_percentage, spin_cost , option::some(nft_store), option::none(), 0);
     }
 
     #[randomness]
@@ -340,8 +340,7 @@ module mini_games::nft_lottery {
         assert!(check_is_nft_v2_still_valid(nft_v2_store), E_ERROR_NFT_ALREADY_WON);
 
         let token_floor_price = borrow_global<NFTV2Store>(object::object_address(&nft_v2_store)).token_floor_price;
-        let spin_cost = (token_floor_price * winning_percentage * MULTIPLIER) / (DIVISOR * 100);
-        let service_fee = (token_floor_price * MULTIPLIER) / (DIVISOR * 100);
+        let spin_cost = (token_floor_price * winning_percentage * MULTIPLIER * BASE_FEE_MULTIPLIER) / (DIVISOR * 100 * BASE_FEE_DIVISOR) ;
 
         if(!table::contains(&borrow_global<Rewards>(resource_account::get_address()).rewards, signer::address_of(sender))){
             table::add(&mut borrow_global_mut<Rewards>(resource_account::get_address()).rewards, signer::address_of(sender), Reward {
@@ -360,14 +359,13 @@ module mini_games::nft_lottery {
         if (use_free_spin && free_spin_length > 0){
             winning_percentage = vector::remove(&mut player_rewards.free_spin, 0);
         } else {
-            let fees = coin::withdraw<AptosCoin>(sender, (spin_cost + service_fee));
-            let lottery_manager = borrow_global_mut<LotteryManager>(resource_account::get_address());
-            coin::merge<AptosCoin>(&mut lottery_manager.apt_balance, fees);
+            let fees = coin::withdraw<AptosCoin>(sender, (spin_cost ));
+            house_treasury::merge_coins<AptosCoin>(fees);
         };
 
         let random_num = randomness::u64_range(0, 10000);
         let tier = allot_tier(winning_percentage * MULTIPLIER, random_num);
-        handle_tier(sender, tier, winning_percentage, spin_cost + service_fee, option::none(), option::some(nft_v2_store), 1);
+        handle_tier(sender, tier, winning_percentage, spin_cost , option::none(), option::some(nft_v2_store), 1);
     }
 
     public entry fun play_v2(
@@ -380,15 +378,12 @@ module mini_games::nft_lottery {
     }
 
     entry fun claim(sender: &signer)
-    acquires Rewards, NFTStore, NFTV2Store, /*LotteryManager*/ {
-        // assert!(check_status(), E_ERROR_LOTTERY_PAUSED);
+    acquires Rewards, NFTStore, NFTV2Store,{
 
-        // Fetch the rewards of the player
         let sender_address = signer::address_of(sender);
         let rewards = &mut borrow_global_mut<Rewards>(resource_account::get_address()).rewards;
         let player_rewards = table::borrow_mut(rewards, sender_address);
 
-        // Claim v1 NFTs if any
         vector::for_each<Object<NFTStore>>(player_rewards.nft, |nft| {
             let NFTStore { token, token_floor_price : _token_floor_price } = move_from<NFTStore>(object::object_address(&nft));
             tokenv1::deposit_token(sender, token);
@@ -396,7 +391,6 @@ module mini_games::nft_lottery {
         });
         player_rewards.nft = vector::empty<Object<NFTStore>>();
 
-        // Claim v2 NFTs if any
         vector::for_each<Object<NFTV2Store>>(player_rewards.nft_v2, |nft_v2| {
             let NFTV2Store {
                 token_v2,
@@ -408,20 +402,17 @@ module mini_games::nft_lottery {
             let token_signer = object::generate_signer_for_extending(&extend_ref);
             object::transfer(&token_signer, token_v2, sender_address);
             object::delete(delete_ref);
-            // object::transfer(&resource_account::get_signer(), nft_v2, sender_address);
         });
 
 
 
         player_rewards.nft_v2 = vector::empty<Object<NFTV2Store>>();
 
-        // Claim APT if any
         let apt = &mut player_rewards.apt;
         let value = coin::value(apt);
         let coin = coin::extract(apt, value);
         aptos_account::deposit_coins(sender_address, coin);
 
-        // Claim raffle tickets if any
         let amount = player_rewards.raffle_ticket;
         if (amount > 0) {
             raffle::mint_ticket(&resource_account::get_signer(), sender_address, amount);
